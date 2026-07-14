@@ -1,0 +1,8 @@
+build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+.DS_Store
+ghostty/
+GhosttyKit.xcframework/
+*.xcframework.tar.gz

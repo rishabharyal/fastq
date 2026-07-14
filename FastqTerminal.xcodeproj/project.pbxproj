@@ -1,0 +1,316 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		B10000000000000000000001 /* FastqTerminalApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000001 /* FastqTerminalApp.swift */; };
+		B10000000000000000000002 /* TerminalRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000002 /* TerminalRootView.swift */; };
+		B10000000000000000000003 /* TerminalSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000003 /* TerminalSession.swift */; };
+		B10000000000000000000004 /* PTYProcess.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000004 /* PTYProcess.swift */; };
+		B10000000000000000000005 /* TerminalIPCServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000005 /* TerminalIPCServer.swift */; };
+		B10000000000000000000006 /* FastqIPC.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000006 /* FastqIPC.swift */; };
+		B10000000000000000000008 /* PTYHelper.c in Sources */ = {isa = PBXBuildFile; fileRef = B2000000000000000000000B /* PTYHelper.c */; };
+		B10000000000000000000007 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000007 /* Assets.xcassets */; };
+		B10000000000000000000009 /* SwiftTerm in Frameworks */ = {isa = PBXBuildFile; productRef = B2000000000000000000000D /* SwiftTerm */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		B20000000000000000000001 /* FastqTerminalApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FastqTerminalApp.swift; sourceTree = "<group>"; };
+		B20000000000000000000002 /* TerminalRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalRootView.swift; sourceTree = "<group>"; };
+		B20000000000000000000003 /* TerminalSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalSession.swift; sourceTree = "<group>"; };
+		B20000000000000000000004 /* PTYProcess.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PTYProcess.swift; sourceTree = "<group>"; };
+		B20000000000000000000005 /* TerminalIPCServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalIPCServer.swift; sourceTree = "<group>"; };
+		B20000000000000000000006 /* FastqIPC.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FastqIPC.swift; sourceTree = "<group>"; };
+		B20000000000000000000007 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		B20000000000000000000008 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		B20000000000000000000009 /* Fastq Terminal.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Fastq Terminal.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		B2000000000000000000000A /* FastqTerminal.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = FastqTerminal.entitlements; sourceTree = "<group>"; };
+		B2000000000000000000000B /* PTYHelper.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = PTYHelper.c; sourceTree = "<group>"; };
+		B2000000000000000000000C /* FastqTerminal-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "FastqTerminal-Bridging-Header.h"; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		B30000000000000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B10000000000000000000009 /* SwiftTerm in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		B40000000000000000000001 = {
+			isa = PBXGroup;
+			children = (
+				B40000000000000000000002 /* FastqTerminal */,
+				B40000000000000000000006 /* Shared */,
+				B40000000000000000000007 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		B40000000000000000000002 /* FastqTerminal */ = {
+			isa = PBXGroup;
+			children = (
+				B20000000000000000000001 /* FastqTerminalApp.swift */,
+				B40000000000000000000003 /* Models */,
+				B40000000000000000000004 /* Services */,
+				B40000000000000000000005 /* Views */,
+				B20000000000000000000007 /* Assets.xcassets */,
+				B20000000000000000000008 /* Info.plist */,
+				B2000000000000000000000A /* FastqTerminal.entitlements */,
+				B2000000000000000000000C /* FastqTerminal-Bridging-Header.h */,
+			);
+			path = FastqTerminal;
+			sourceTree = "<group>";
+		};
+		B40000000000000000000003 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				B20000000000000000000003 /* TerminalSession.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		B40000000000000000000004 /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				B20000000000000000000004 /* PTYProcess.swift */,
+				B2000000000000000000000B /* PTYHelper.c */,
+				B20000000000000000000005 /* TerminalIPCServer.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		B40000000000000000000005 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				B20000000000000000000002 /* TerminalRootView.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		B40000000000000000000006 /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				B20000000000000000000006 /* FastqIPC.swift */,
+			);
+			path = Shared;
+			sourceTree = "<group>";
+		};
+		B40000000000000000000007 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				B20000000000000000000009 /* Fastq Terminal.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		B50000000000000000000001 /* FastqTerminal */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B70000000000000000000003 /* Build configuration list for PBXNativeTarget "FastqTerminal" */;
+			buildPhases = (
+				B60000000000000000000001 /* Sources */,
+				B30000000000000000000001 /* Frameworks */,
+				B60000000000000000000002 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = FastqTerminal;
+			packageProductDependencies = (
+				B2000000000000000000000D /* SwiftTerm */,
+			);
+			productName = FastqTerminal;
+			productReference = B20000000000000000000009 /* Fastq Terminal.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		B80000000000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1600;
+				LastUpgradeCheck = 1600;
+			};
+			buildConfigurationList = B70000000000000000000001 /* Build configuration list for PBXProject "FastqTerminal" */;
+			compatibilityVersion = "Xcode 15.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = B40000000000000000000001;
+			packageReferences = (
+				B2000000000000000000000E /* XCRemoteSwiftPackageReference "SwiftTerm" */,
+			);
+			productRefGroup = B40000000000000000000007 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				B50000000000000000000001 /* FastqTerminal */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		B60000000000000000000002 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B10000000000000000000007 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		B60000000000000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B10000000000000000000001 /* FastqTerminalApp.swift in Sources */,
+				B10000000000000000000002 /* TerminalRootView.swift in Sources */,
+				B10000000000000000000003 /* TerminalSession.swift in Sources */,
+				B10000000000000000000004 /* PTYProcess.swift in Sources */,
+				B10000000000000000000005 /* TerminalIPCServer.swift in Sources */,
+				B10000000000000000000006 /* FastqIPC.swift in Sources */,
+				B10000000000000000000008 /* PTYHelper.c in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		B90000000000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		B90000000000000000000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+			};
+			name = Release;
+		};
+		B90000000000000000000003 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = FastqTerminal/FastqTerminal.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = FastqTerminal/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = app.fastq.terminal;
+				PRODUCT_NAME = "Fastq Terminal";
+				SWIFT_OBJC_BRIDGING_HEADER = "FastqTerminal/FastqTerminal-Bridging-Header.h";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		B90000000000000000000004 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = FastqTerminal/FastqTerminal.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = FastqTerminal/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = app.fastq.terminal;
+				PRODUCT_NAME = "Fastq Terminal";
+				SWIFT_OBJC_BRIDGING_HEADER = "FastqTerminal/FastqTerminal-Bridging-Header.h";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		B70000000000000000000001 /* Build configuration list for PBXProject "FastqTerminal" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B90000000000000000000001 /* Debug */,
+				B90000000000000000000002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		B70000000000000000000003 /* Build configuration list for PBXNativeTarget "FastqTerminal" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B90000000000000000000003 /* Debug */,
+				B90000000000000000000004 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		B2000000000000000000000E /* XCRemoteSwiftPackageReference "SwiftTerm" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/migueldeicaza/SwiftTerm.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.2.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		B2000000000000000000000D /* SwiftTerm */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = B2000000000000000000000E /* XCRemoteSwiftPackageReference "SwiftTerm" */;
+			productName = SwiftTerm;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = B80000000000000000000001 /* Project object */;
+}

@@ -1,0 +1,380 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A10000000000000000000001 /* FastqApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000001 /* FastqApp.swift */; };
+		A10000000000000000000002 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000002 /* Models.swift */; };
+		A10000000000000000000003 /* AppSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000003 /* AppSettings.swift */; };
+		A10000000000000000000004 /* SessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000004 /* SessionStore.swift */; };
+		A10000000000000000000005 /* AgentLauncher.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000005 /* AgentLauncher.swift */; };
+		A10000000000000000000006 /* HotKeyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000006 /* HotKeyManager.swift */; };
+		A10000000000000000000007 /* LauncherPanelController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000007 /* LauncherPanelController.swift */; };
+		A10000000000000000000008 /* LauncherView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000008 /* LauncherView.swift */; };
+		A10000000000000000000009 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000009 /* SettingsView.swift */; };
+		A1000000000000000000000A /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000A /* Assets.xcassets */; };
+		A1000000000000000000000B /* Carbon.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000B /* Carbon.framework */; };
+		A1000000000000000000000C /* Onboarding.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000F /* Onboarding.swift */; };
+		A1000000000000000000000D /* ToolPathDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000010 /* ToolPathDetector.swift */; };
+		A1000000000000000000000E /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000011 /* OnboardingView.swift */; };
+		A1000000000000000000000F /* OnboardingWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000012 /* OnboardingWindowController.swift */; };
+		A10000000000000000000011 /* ProjectPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000013 /* ProjectPickerView.swift */; };
+		A10000000000000000000012 /* PermissionsHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000014 /* PermissionsHelper.swift */; };
+		A10000000000000000000013 /* LauncherKeyRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000015 /* LauncherKeyRouter.swift */; };
+		A10000000000000000000014 /* FastqIPC.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000016 /* FastqIPC.swift */; };
+		A10000000000000000000015 /* FastqTerminalClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000017 /* FastqTerminalClient.swift */; };
+		A10000000000000000000016 /* FolderPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000018 /* FolderPicker.swift */; };
+		A10000000000000000000017 /* SettingsWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000019 /* SettingsWindowController.swift */; };
+		A10000000000000000000018 /* HotkeyShortcut.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000001A /* HotkeyShortcut.swift */; };
+		A10000000000000000000019 /* HotkeyRecorderButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000001B /* HotkeyRecorderButton.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		A20000000000000000000001 /* FastqApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FastqApp.swift; sourceTree = "<group>"; };
+		A20000000000000000000002 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		A20000000000000000000003 /* AppSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettings.swift; sourceTree = "<group>"; };
+		A20000000000000000000004 /* SessionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionStore.swift; sourceTree = "<group>"; };
+		A20000000000000000000005 /* AgentLauncher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentLauncher.swift; sourceTree = "<group>"; };
+		A20000000000000000000006 /* HotKeyManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotKeyManager.swift; sourceTree = "<group>"; };
+		A20000000000000000000007 /* LauncherPanelController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LauncherPanelController.swift; sourceTree = "<group>"; };
+		A20000000000000000000008 /* LauncherView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LauncherView.swift; sourceTree = "<group>"; };
+		A20000000000000000000009 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		A2000000000000000000000A /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		A2000000000000000000000B /* Carbon.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Carbon.framework; path = System/Library/Frameworks/Carbon.framework; sourceTree = SDKROOT; };
+		A2000000000000000000000C /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		A2000000000000000000000D /* Fastq.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Fastq.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A2000000000000000000000E /* Fastq.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Fastq.entitlements; sourceTree = "<group>"; };
+		A2000000000000000000000F /* Onboarding.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Onboarding.swift; sourceTree = "<group>"; };
+		A20000000000000000000010 /* ToolPathDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolPathDetector.swift; sourceTree = "<group>"; };
+		A20000000000000000000011 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
+		A20000000000000000000012 /* OnboardingWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingWindowController.swift; sourceTree = "<group>"; };
+		A20000000000000000000013 /* ProjectPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectPickerView.swift; sourceTree = "<group>"; };
+		A20000000000000000000014 /* PermissionsHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionsHelper.swift; sourceTree = "<group>"; };
+		A20000000000000000000015 /* LauncherKeyRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LauncherKeyRouter.swift; sourceTree = "<group>"; };
+		A20000000000000000000016 /* FastqIPC.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FastqIPC.swift; sourceTree = "<group>"; };
+		A20000000000000000000017 /* FastqTerminalClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FastqTerminalClient.swift; sourceTree = "<group>"; };
+		A20000000000000000000018 /* FolderPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolderPicker.swift; sourceTree = "<group>"; };
+		A20000000000000000000019 /* SettingsWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsWindowController.swift; sourceTree = "<group>"; };
+		A2000000000000000000001A /* HotkeyShortcut.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotkeyShortcut.swift; sourceTree = "<group>"; };
+		A2000000000000000000001B /* HotkeyRecorderButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotkeyRecorderButton.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		A30000000000000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A1000000000000000000000B /* Carbon.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		A40000000000000000000001 = {
+			isa = PBXGroup;
+			children = (
+				A40000000000000000000002 /* Fastq */,
+				A40000000000000000000009 /* Shared */,
+				A40000000000000000000007 /* Frameworks */,
+				A40000000000000000000008 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		A40000000000000000000002 /* Fastq */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000001 /* FastqApp.swift */,
+				A40000000000000000000003 /* Models */,
+				A40000000000000000000004 /* Services */,
+				A40000000000000000000005 /* Controllers */,
+				A40000000000000000000006 /* Views */,
+				A2000000000000000000000A /* Assets.xcassets */,
+				A2000000000000000000000C /* Info.plist */,
+				A2000000000000000000000E /* Fastq.entitlements */,
+			);
+			path = Fastq;
+			sourceTree = "<group>";
+		};
+		A40000000000000000000003 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000002 /* Models.swift */,
+				A20000000000000000000003 /* AppSettings.swift */,
+				A20000000000000000000004 /* SessionStore.swift */,
+				A2000000000000000000000F /* Onboarding.swift */,
+				A2000000000000000000001A /* HotkeyShortcut.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		A40000000000000000000004 /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000005 /* AgentLauncher.swift */,
+				A20000000000000000000006 /* HotKeyManager.swift */,
+				A20000000000000000000010 /* ToolPathDetector.swift */,
+				A20000000000000000000014 /* PermissionsHelper.swift */,
+				A20000000000000000000015 /* LauncherKeyRouter.swift */,
+				A20000000000000000000017 /* FastqTerminalClient.swift */,
+				A20000000000000000000018 /* FolderPicker.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		A40000000000000000000005 /* Controllers */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000007 /* LauncherPanelController.swift */,
+				A20000000000000000000012 /* OnboardingWindowController.swift */,
+				A20000000000000000000019 /* SettingsWindowController.swift */,
+			);
+			path = Controllers;
+			sourceTree = "<group>";
+		};
+		A40000000000000000000006 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000008 /* LauncherView.swift */,
+				A20000000000000000000009 /* SettingsView.swift */,
+				A20000000000000000000011 /* OnboardingView.swift */,
+				A20000000000000000000013 /* ProjectPickerView.swift */,
+				A2000000000000000000001B /* HotkeyRecorderButton.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		A40000000000000000000007 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				A2000000000000000000000B /* Carbon.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		A40000000000000000000009 /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000016 /* FastqIPC.swift */,
+			);
+			name = Shared;
+			path = Shared;
+			sourceTree = "<group>";
+		};
+		A40000000000000000000008 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				A2000000000000000000000D /* Fastq.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		A50000000000000000000001 /* Fastq */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A70000000000000000000003 /* Build configuration list for PBXNativeTarget "Fastq" */;
+			buildPhases = (
+				A60000000000000000000001 /* Sources */,
+				A30000000000000000000001 /* Frameworks */,
+				A60000000000000000000002 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = Fastq;
+			productName = Fastq;
+			productReference = A2000000000000000000000D /* Fastq.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		A80000000000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1600;
+				LastUpgradeCheck = 1600;
+				TargetAttributes = {
+					A50000000000000000000001 = {
+						CreatedOnToolsVersion = 16.0;
+					};
+				};
+			};
+			buildConfigurationList = A70000000000000000000001 /* Build configuration list for PBXProject "Fastq" */;
+			compatibilityVersion = "Xcode 15.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = A40000000000000000000001;
+			productRefGroup = A40000000000000000000008 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				A50000000000000000000001 /* Fastq */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		A60000000000000000000002 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A1000000000000000000000A /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		A60000000000000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000000000000000000001 /* FastqApp.swift in Sources */,
+				A10000000000000000000002 /* Models.swift in Sources */,
+				A10000000000000000000003 /* AppSettings.swift in Sources */,
+				A10000000000000000000004 /* SessionStore.swift in Sources */,
+				A10000000000000000000005 /* AgentLauncher.swift in Sources */,
+				A10000000000000000000006 /* HotKeyManager.swift in Sources */,
+				A10000000000000000000007 /* LauncherPanelController.swift in Sources */,
+				A10000000000000000000008 /* LauncherView.swift in Sources */,
+				A10000000000000000000009 /* SettingsView.swift in Sources */,
+				A1000000000000000000000C /* Onboarding.swift in Sources */,
+				A1000000000000000000000D /* ToolPathDetector.swift in Sources */,
+				A1000000000000000000000E /* OnboardingView.swift in Sources */,
+				A1000000000000000000000F /* OnboardingWindowController.swift in Sources */,
+				A10000000000000000000011 /* ProjectPickerView.swift in Sources */,
+				A10000000000000000000012 /* PermissionsHelper.swift in Sources */,
+				A10000000000000000000013 /* LauncherKeyRouter.swift in Sources */,
+				A10000000000000000000014 /* FastqIPC.swift in Sources */,
+				A10000000000000000000015 /* FastqTerminalClient.swift in Sources */,
+				A10000000000000000000016 /* FolderPicker.swift in Sources */,
+				A10000000000000000000017 /* SettingsWindowController.swift in Sources */,
+				A10000000000000000000018 /* HotkeyShortcut.swift in Sources */,
+				A10000000000000000000019 /* HotkeyRecorderButton.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		A90000000000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_TESTABILITY = YES;
+				GCC_DYNAMIC_NO_PIC = NO;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		A90000000000000000000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+			};
+			name = Release;
+		};
+		A90000000000000000000003 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Fastq/Fastq.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Fastq/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = app.fastq.launcher;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		A90000000000000000000004 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Fastq/Fastq.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Fastq/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = app.fastq.launcher;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		A70000000000000000000001 /* Build configuration list for PBXProject "Fastq" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A90000000000000000000001 /* Debug */,
+				A90000000000000000000002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A70000000000000000000003 /* Build configuration list for PBXNativeTarget "Fastq" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A90000000000000000000003 /* Debug */,
+				A90000000000000000000004 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = A80000000000000000000001 /* Project object */;
+}
