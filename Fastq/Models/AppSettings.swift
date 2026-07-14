@@ -36,6 +36,17 @@ final class AppSettings: ObservableObject {
         didSet { save() }
     }
 
+    /// Placeholder auth: toggles the footer between "Log in" and the local
+    /// macOS profile (initials + full name). Real backend comes later.
+    @Published var isLoggedIn: Bool {
+        didSet { save() }
+    }
+
+    /// Submitted prompts, oldest → newest (recalled with ↑ in the launcher).
+    @Published var promptHistory: [String] {
+        didSet { save() }
+    }
+
     private let defaultsKey = "fastq.settings.v1"
     private let maxRecents = 8
 
@@ -46,12 +57,21 @@ final class AppSettings: ObservableObject {
             tools = Self.normalizedTools(decoded.tools)
             defaultToolID = decoded.defaultToolID
             defaultModel = decoded.defaultModel
-            hotkeyKeyCode = decoded.hotkeyKeyCode
-            hotkeyModifiers = decoded.hotkeyModifiers
+            // Migrate the old ⌘⌥K default to ⌘↩; custom bindings are kept.
+            if decoded.hotkeyKeyCode == HotkeyShortcut.legacyDefaultKeyCode,
+               decoded.hotkeyModifiers == HotkeyShortcut.legacyDefaultModifiers {
+                hotkeyKeyCode = HotkeyShortcut.defaultKeyCode
+                hotkeyModifiers = HotkeyShortcut.defaultModifiers
+            } else {
+                hotkeyKeyCode = decoded.hotkeyKeyCode
+                hotkeyModifiers = decoded.hotkeyModifiers
+            }
             hasCompletedOnboarding = decoded.hasCompletedOnboarding
             recentProjectIDs = decoded.recentProjectIDs.filter { id in
                 decoded.projects.contains(where: { $0.id == id })
             }
+            isLoggedIn = decoded.isLoggedIn
+            promptHistory = decoded.promptHistory
             // Drop legacy Cursor GUI default if it pointed at a removed tool.
             if let defaultToolID, !tools.contains(where: { $0.id == defaultToolID && $0.enabled }) {
                 self.defaultToolID = tools.first(where: \.enabled)?.id
@@ -63,11 +83,23 @@ final class AppSettings: ObservableObject {
             tools = defaultTools
             defaultToolID = defaultTools.first(where: { $0.kind == .claudeCode })?.id
             defaultModel = .auto
-            // Default ⌘⌥K
+            // Default ⌘↩
             hotkeyKeyCode = HotkeyShortcut.defaultKeyCode
             hotkeyModifiers = HotkeyShortcut.defaultModifiers
             hasCompletedOnboarding = false
             recentProjectIDs = []
+            isLoggedIn = false
+            promptHistory = []
+        }
+    }
+
+    /// Remember a submitted prompt for ↑-recall (dedupes repeats, caps at 50).
+    func recordPrompt(_ prompt: String) {
+        let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, promptHistory.last != trimmed else { return }
+        promptHistory.append(trimmed)
+        if promptHistory.count > 50 {
+            promptHistory.removeFirst(promptHistory.count - 50)
         }
     }
 
@@ -170,7 +202,9 @@ final class AppSettings: ObservableObject {
             hotkeyKeyCode: hotkeyKeyCode,
             hotkeyModifiers: hotkeyModifiers,
             hasCompletedOnboarding: hasCompletedOnboarding,
-            recentProjectIDs: recentProjectIDs
+            recentProjectIDs: recentProjectIDs,
+            isLoggedIn: isLoggedIn,
+            promptHistory: promptHistory
         )
         if let data = try? JSONEncoder().encode(payload) {
             UserDefaults.standard.set(data, forKey: defaultsKey)
@@ -187,10 +221,13 @@ private struct PersistedSettings: Codable {
     var hotkeyModifiers: UInt
     var hasCompletedOnboarding: Bool
     var recentProjectIDs: [UUID]
+    var isLoggedIn: Bool
+    var promptHistory: [String]
 
     enum CodingKeys: String, CodingKey {
         case projects, tools, defaultToolID, defaultModel
         case hotkeyKeyCode, hotkeyModifiers, hasCompletedOnboarding, recentProjectIDs
+        case isLoggedIn, promptHistory
     }
 
     init(
@@ -201,7 +238,9 @@ private struct PersistedSettings: Codable {
         hotkeyKeyCode: UInt16,
         hotkeyModifiers: UInt,
         hasCompletedOnboarding: Bool,
-        recentProjectIDs: [UUID]
+        recentProjectIDs: [UUID],
+        isLoggedIn: Bool,
+        promptHistory: [String]
     ) {
         self.projects = projects
         self.tools = tools
@@ -211,6 +250,8 @@ private struct PersistedSettings: Codable {
         self.hotkeyModifiers = hotkeyModifiers
         self.hasCompletedOnboarding = hasCompletedOnboarding
         self.recentProjectIDs = recentProjectIDs
+        self.isLoggedIn = isLoggedIn
+        self.promptHistory = promptHistory
     }
 
     init(from decoder: Decoder) throws {
@@ -226,6 +267,8 @@ private struct PersistedSettings: Codable {
         hasCompletedOnboarding = try container.decodeIfPresent(Bool.self, forKey: .hasCompletedOnboarding)
             ?? projects.isEmpty
         recentProjectIDs = try container.decodeIfPresent([UUID].self, forKey: .recentProjectIDs) ?? []
+        isLoggedIn = try container.decodeIfPresent(Bool.self, forKey: .isLoggedIn) ?? false
+        promptHistory = try container.decodeIfPresent([String].self, forKey: .promptHistory) ?? []
     }
 }
 

@@ -33,12 +33,17 @@ struct FastqTerminalApp: App {
                     }
                 }
                 .keyboardShortcut("w", modifiers: .command)
+
+                Button("Close All in Project") {
+                    appDelegate.store.quitAllInSelectedWorkspace()
+                }
+                .keyboardShortcut("w", modifiers: [.command, .shift])
             }
             CommandGroup(after: .sidebar) {
                 Button("Toggle Sidebar") {
                     NotificationCenter.default.post(name: .fastqToggleTerminalSidebar, object: nil)
                 }
-                .keyboardShortcut("s", modifiers: [.command, .control])
+                .keyboardShortcut("s", modifiers: .command)
             }
             CommandMenu("Terminal") {
                 // With the terminal focused these are consumed by Ghostty's
@@ -120,6 +125,53 @@ final class TerminalAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
             let backwards = event.modifierFlags.contains(.shift)
             self?.store.cycle(by: backwards ? -1 : 1)
             return nil
+        }
+
+        // App-owned Cmd shortcuts. The Ghostty surface consumes key
+        // equivalents (super+t etc.) before the menu bar sees them, so these
+        // must intercept ahead of event dispatch to work while typing.
+        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self else { return event }
+            let mods = event.modifierFlags.intersection([.command, .option, .control, .shift])
+
+            // ⌥⌘← / ⌥⌘→ — prev/next tab, Terminal.app-style.
+            if mods == [.command, .option] {
+                switch event.keyCode {
+                case 123: self.store.cycle(by: -1); return nil // ←
+                case 124: self.store.cycle(by: 1); return nil  // →
+                default: return event
+                }
+            }
+
+            if mods == [.command, .shift] {
+                switch event.keyCode {
+                case 33: self.store.cycle(by: -1); return nil // [
+                case 30: self.store.cycle(by: 1); return nil  // ]
+                case 13: self.store.quitAllInSelectedWorkspace(); return nil // W
+                default: return event
+                }
+            }
+
+            guard mods == .command else { return event }
+            switch event.charactersIgnoringModifiers {
+            case "t":
+                self.store.createShellSession()
+                self.showMainWindow()
+                return nil
+            case "s":
+                NotificationCenter.default.post(name: .fastqToggleTerminalSidebar, object: nil)
+                return nil
+            case "w":
+                if let id = self.store.selectedSessionID {
+                    self.store.quit(id)
+                }
+                return nil
+            case let digit? where digit.count == 1 && "123456789".contains(digit):
+                self.store.select(index: Int(digit)! - 1)
+                return nil
+            default:
+                return event
+            }
         }
 
         NotificationCenter.default.addObserver(

@@ -22,6 +22,9 @@ final class TerminalSessionStore: ObservableObject {
     @Published var selectedSessionID: UUID?
     @Published var selectedWorkspacePath: String?
     @Published var collapsedWorkspaceIDs: Set<String> = []
+    /// User-arranged project order (drag to reorder). Paths not listed here
+    /// (new projects) append after in first-seen order.
+    @Published private(set) var workspaceOrder: [String] = []
 
     var selectedSession: TerminalSession? {
         sessions.first { $0.id == selectedSessionID }
@@ -29,7 +32,7 @@ final class TerminalSessionStore: ObservableObject {
 
     var workspaces: [TerminalWorkspace] {
         var seen: [String: TerminalWorkspace] = [:]
-        var order: [String] = []
+        var encounter: [String] = []
         for session in sessions {
             if seen[session.projectPath] == nil {
                 seen[session.projectPath] = TerminalWorkspace(
@@ -38,10 +41,12 @@ final class TerminalSessionStore: ObservableObject {
                     abbreviatedPath: Self.abbreviate(session.projectPath),
                     groupName: Self.groupName(for: session.projectPath)
                 )
-                order.append(session.projectPath)
+                encounter.append(session.projectPath)
             }
         }
-        return order.compactMap { seen[$0] }
+        let pinned = workspaceOrder.filter { seen[$0] != nil }
+        let rest = encounter.filter { !workspaceOrder.contains($0) }
+        return (pinned + rest).compactMap { seen[$0] }
     }
 
     var workspaceGroups: [TerminalWorkspaceGroup] {
@@ -74,10 +79,14 @@ final class TerminalSessionStore: ObservableObject {
             guard let self, let session else { return }
             session.isRunning = false
             self.objectWillChange.send()
-            // Manual tabs close with their shell, like every terminal app.
-            // Agent tabs stay open so the final output remains readable.
-            if session.isShell {
+            // Shell tabs (manual or fallback) close with their process, like
+            // every terminal app. Agent tabs drop into a shell in the same
+            // tab so the workflow continues where the agent left off.
+            if session.closesOnExit {
                 self.quit(session.id)
+            } else {
+                session.relaunchAsShell()
+                self.objectWillChange.send()
             }
         }
         return session
@@ -174,6 +183,37 @@ final class TerminalSessionStore: ObservableObject {
         sessions.map(\.info)
     }
 
+    /// ⇧⌘W: close every tab in the current project.
+    func quitAllInSelectedWorkspace() {
+        guard let path = selectedSession?.projectPath ?? selectedWorkspacePath else { return }
+        for session in sessions(in: path) {
+            quit(session.id)
+        }
+    }
+
+    /// Drag-reorder: move a project so it takes the target project's slot.
+    func moveWorkspace(_ path: String, to targetPath: String) {
+        var order = workspaces.map(\.path)
+        guard let from = order.firstIndex(of: path),
+              let to = order.firstIndex(of: targetPath),
+              from != to
+        else { return }
+        order.move(fromOffsets: IndexSet(integer: from), toOffset: to > from ? to + 1 : to)
+        workspaceOrder = order
+    }
+
+    /// Drag-reorder: move a tab onto another tab's slot within the same
+    /// project (a tab's PTY is anchored to its folder, so no cross-project
+    /// moves). Reorders the flat array, so Cmd+1…9 follows the new order.
+    func moveSession(_ id: UUID, to targetID: UUID) {
+        guard let from = sessions.firstIndex(where: { $0.id == id }),
+              let to = sessions.firstIndex(where: { $0.id == targetID }),
+              from != to,
+              sessions[from].projectPath == sessions[to].projectPath
+        else { return }
+        sessions.move(fromOffsets: IndexSet(integer: from), toOffset: to > from ? to + 1 : to)
+    }
+
     func toggleCollapsed(_ path: String) {
         if collapsedWorkspaceIDs.contains(path) {
             collapsedWorkspaceIDs.remove(path)
@@ -218,9 +258,13 @@ final class TerminalSession: Identifiable, ObservableObject {
 
     var isShell: Bool { tool == Self.shellTool }
 
-    /// Raw PTY bytes for the emulator view. Replay buffered output when the view attaches.
-    private(set) var pendingOutput = Data()
-    var onData: ((Data) -> Void)?
+    /// Agent tab whose process exited and was replaced by a login shell.
+    private(set) var isFallbackShell = false
+    /// Shell-like tabs close with their process; agent tabs fall back to a shell.
+    var closesOnExit: Bool { isShell || isFallbackShell }
+
+    /// Raw PTY bytes for the emulator view; buffers until the view attaches.
+    private let output = TerminalOutputBridge()
 
     private let pty = PTYProcess()
     /// For the Ghostty IO bridge: captured on the main actor, written from IO threads.
@@ -243,6 +287,7 @@ final class TerminalSession: Identifiable, ObservableObject {
     }
 
     var toolLabel: String {
+        if isFallbackShell { return "Terminal" }
         switch tool {
         case "claudeCode": return "Claude Code"
         case "codexCLI": return "Codex"
@@ -258,8 +303,11 @@ final class TerminalSession: Identifiable, ObservableObject {
     /// their sidebar title; agent tabs keep the prompt title and only update
     /// the status line.
     func applyTerminalTitle(_ newTitle: String) {
-        statusLine = newTitle
-        if isShell {
+        // TUIs spam identical titles; don't churn SwiftUI for no-ops.
+        if statusLine != newTitle {
+            statusLine = newTitle
+        }
+        if isShell || isFallbackShell, title != newTitle {
             title = newTitle
         }
     }
@@ -307,6 +355,8 @@ final class TerminalSession: Identifiable, ObservableObject {
     }
 
     private func launch(cols: UInt16, rows: UInt16) throws {
+        // Wire callbacks before forking — output starts flowing immediately.
+        wirePTYCallbacks()
         let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
         if isShell {
             // Manual tab: interactive login shell, like Terminal.app.
@@ -335,20 +385,6 @@ final class TerminalSession: Identifiable, ObservableObject {
         isRunning = true
         statusLine = "\(toolLabel) running"
 
-        pty.onOutput = { [weak self] data in
-            guard let self else { return }
-            if let onData {
-                onData(data)
-            } else {
-                pendingOutput.append(data)
-            }
-        }
-        pty.onExit = { [weak self] _ in
-            self?.isRunning = false
-            self?.statusLine = "Exited"
-            self?.onExit?()
-        }
-
         // Codex (and similar) boot a full TUI first; type the prompt afterward.
         let prompt = initialPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
         if !prompt.isEmpty {
@@ -360,18 +396,53 @@ final class TerminalSession: Identifiable, ObservableObject {
         }
     }
 
-    /// Drain any buffered PTY output into the attached emulator.
-    func attachOutputHandler(_ handler: @escaping (Data) -> Void) {
-        onData = handler
-        if !pendingOutput.isEmpty {
-            let buffered = pendingOutput
-            pendingOutput = Data()
-            handler(buffered)
+    private func wirePTYCallbacks() {
+        // Output flows on the PTY read queue straight into the emulator's
+        // parse queue — main only hears about lifecycle changes.
+        pty.onOutput = { [output] data in
+            output.emit(data)
+        }
+        pty.onExit = { [weak self] _ in
+            self?.isRunning = false
+            self?.statusLine = "Exited"
+            self?.onExit?()
         }
     }
 
+    /// Agent process ended: keep the tab (scrollback intact) and drop into a
+    /// login shell in the project folder, like any terminal would.
+    func relaunchAsShell() {
+        guard !isRunning, !closesOnExit else { return }
+        let notice = "\r\n\u{1B}[2m── \(toolLabel) exited · dropping into shell ──\u{1B}[0m\r\n"
+        output.emit(Data(notice.utf8))
+
+        let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
+        let size = pty.size
+        wirePTYCallbacks()
+        do {
+            try pty.start(
+                command: shell,
+                arguments: ["-l"],
+                workingDirectory: projectPath,
+                cols: size.cols,
+                rows: size.rows
+            )
+        } catch {
+            statusLine = "Failed to start shell"
+            return
+        }
+        isFallbackShell = true
+        isRunning = true
+        statusLine = "Terminal"
+    }
+
+    /// Drain any buffered PTY output into the attached emulator.
+    func attachOutputHandler(_ handler: @escaping (Data) -> Void) {
+        output.attach(handler)
+    }
+
     func detachOutputHandler() {
-        onData = nil
+        output.detach()
     }
 
     func write(_ text: String) {
@@ -411,5 +482,42 @@ final class TerminalSession: Identifiable, ObservableObject {
 
     private func shellEscape(_ value: String) -> String {
         "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+}
+
+/// Thread-safe PTY→emulator hand-off. `emit` is called on the PTY read
+/// queue; the attached handler (Ghostty's `receive`) parses on its own
+/// serial queue, so terminal output never touches the main thread.
+final class TerminalOutputBridge: @unchecked Sendable {
+    private let lock = NSLock()
+    private var handler: ((Data) -> Void)?
+    private var pending = Data()
+
+    func emit(_ data: Data) {
+        lock.lock()
+        guard let handler else {
+            pending.append(data)
+            lock.unlock()
+            return
+        }
+        lock.unlock()
+        handler(data)
+    }
+
+    func attach(_ newHandler: @escaping (Data) -> Void) {
+        lock.lock()
+        handler = newHandler
+        let buffered = pending
+        pending = Data()
+        lock.unlock()
+        if !buffered.isEmpty {
+            newHandler(buffered)
+        }
+    }
+
+    func detach() {
+        lock.lock()
+        handler = nil
+        lock.unlock()
     }
 }

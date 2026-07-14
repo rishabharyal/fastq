@@ -41,7 +41,9 @@ final class VoiceDictationService: ObservableObject {
                 ?? SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
                 ?? SFSpeechRecognizer()
         }
-        Task { _ = await requestSpeechAccess() }
+        // Don't request speech authorization here — dictation is opt-in via
+        // the mic button, and beginHold asks on first use. Prompting from
+        // prepare() spammed the permission dialog on every panel open.
     }
 
     /// Begin hold-to-talk. `onPromptUpdate` receives the full prompt (baseline + live text).

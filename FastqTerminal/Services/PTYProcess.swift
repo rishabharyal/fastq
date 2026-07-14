@@ -15,6 +15,8 @@ final class PTYProcess {
 
     var isRunning: Bool { childPID > 0 }
 
+    var size: (cols: UInt16, rows: UInt16) { (currentCols, currentRows) }
+
     func start(
         command: String,
         arguments: [String],
@@ -23,6 +25,15 @@ final class PTYProcess {
         rows: UInt16,
         environment: [String: String] = [:]
     ) throws {
+        // Restart-safe: a session can fork a fallback shell onto the same
+        // instance after its first child exits.
+        readSource?.cancel()
+        readSource = nil
+        if masterFD >= 0 {
+            close(masterFD)
+            masterFD = -1
+        }
+
         currentCols = max(cols, 20)
         currentRows = max(rows, 10)
 
@@ -106,10 +117,10 @@ final class PTYProcess {
             var buffer = [UInt8](repeating: 0, count: 16_384)
             let count = read(fd, &buffer, buffer.count)
             if count > 0 {
-                let data = Data(buffer.prefix(count))
-                DispatchQueue.main.async {
-                    self?.onOutput?(data)
-                }
+                // Deliver on the read queue — the emulator parses on its own
+                // serial queue. Bouncing through main floods it during heavy
+                // TUI redraws and delays keystroke echo (typing feels laggy).
+                self?.onOutput?(Data(buffer.prefix(count)))
             } else if count == 0 || (count < 0 && errno != EAGAIN && errno != EINTR) {
                 source.cancel()
             }

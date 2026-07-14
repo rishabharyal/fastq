@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 
 // MARK: - Root (Arc wrap-chrome: frame color wraps an inset canvas)
 
@@ -11,6 +12,9 @@ struct TerminalRootView: View {
     /// Hover-summoned floating panel (only meaningful when unpinned).
     @State private var sidebarFloating = false
     @State private var floatHideWork: DispatchWorkItem?
+    /// Live drag-reorder state (project path / tab id being dragged).
+    @State private var draggingWorkspace: String?
+    @State private var draggingSession: UUID?
 
     /// Outer chrome that wraps the canvas on every edge (Arc “frame”).
     private let chromeInset: CGFloat = 12
@@ -130,22 +134,9 @@ struct TerminalRootView: View {
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.white.opacity(0.7))
                     .frame(width: 28, height: 28)
-                    .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
             }
             .buttonStyle(.plain)
-            .help(sidebarPinned ? "Hide Sidebar (⌃⌘S)" : "Pin Sidebar (⌃⌘S)")
-
-            Button {
-                store.createShellSession()
-            } label: {
-                Image(systemName: "plus")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.7))
-                    .frame(width: 28, height: 28)
-                    .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-            }
-            .buttonStyle(.plain)
-            .help("New Terminal (⌘T)")
+            .help(sidebarPinned ? "Hide Sidebar (⌘S)" : "Pin Sidebar (⌘S)")
 
             Spacer(minLength: 0)
         }
@@ -158,11 +149,11 @@ struct TerminalRootView: View {
             sidebarHeader
 
             Text("Projects")
-                .font(.system(size: 11, weight: .semibold))
+                .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(.white.opacity(0.4))
                 .textCase(.uppercase)
                 .padding(.horizontal, 16)
-                .padding(.bottom, 8)
+                .padding(.bottom, 5)
 
             if store.workspaces.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
@@ -178,33 +169,20 @@ struct TerminalRootView: View {
                 Spacer(minLength: 0)
             } else {
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 2) {
+                    LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(store.workspaces) { workspace in
-                            ProjectSidebarSection(store: store, workspace: workspace)
+                            ProjectSidebarSection(
+                                store: store,
+                                workspace: workspace,
+                                draggingWorkspace: $draggingWorkspace,
+                                draggingSession: $draggingSession
+                            )
                         }
                     }
-                    .padding(.horizontal, 10)
-                    .padding(.bottom, 12)
+                    .padding(.horizontal, 8)
+                    .padding(.bottom, 10)
                 }
             }
-
-            Divider().overlay(Color.white.opacity(0.08))
-            HStack(spacing: 8) {
-                Image(systemName: "bolt.horizontal.circle.fill")
-                    .foregroundStyle(TerminalTheme.accent)
-                Text("fastq")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.55))
-                Spacer()
-                Text("\(store.sessions.count)")
-                    .font(.system(size: 11, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.45))
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 2)
-                    .background(Capsule().fill(Color.white.opacity(0.08)))
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
         }
         .frame(maxHeight: .infinity, alignment: .top)
     }
@@ -270,6 +248,8 @@ struct TerminalRootView: View {
 private struct ProjectSidebarSection: View {
     @ObservedObject var store: TerminalSessionStore
     let workspace: TerminalWorkspace
+    @Binding var draggingWorkspace: String?
+    @Binding var draggingSession: UUID?
 
     private var sessions: [TerminalSession] {
         store.sessions(in: workspace.path)
@@ -297,6 +277,16 @@ private struct ProjectSidebarSection: View {
                     onSelect: { store.select(session.id) },
                     onClose: { store.quit(session.id) }
                 )
+                .opacity(draggingSession == session.id ? 0.4 : 1)
+                .onDrag {
+                    draggingSession = session.id
+                    return NSItemProvider(object: session.id.uuidString as NSString)
+                }
+                .onDrop(of: [.text], delegate: SessionDropDelegate(
+                    target: session.id,
+                    dragging: $draggingSession,
+                    store: store
+                ))
             }
         } label: {
             ProjectHeader(
@@ -313,8 +303,18 @@ private struct ProjectSidebarSection: View {
                     }
                 }
             )
+            .opacity(draggingWorkspace == workspace.path ? 0.4 : 1)
+            .onDrag {
+                draggingWorkspace = workspace.path
+                return NSItemProvider(object: workspace.path as NSString)
+            }
+            .onDrop(of: [.text], delegate: WorkspaceDropDelegate(
+                target: workspace.path,
+                dragging: $draggingWorkspace,
+                store: store
+            ))
         }
-        .tint(.white.opacity(0.55))
+        .tint(.white.opacity(0.45))
     }
 }
 
@@ -325,44 +325,58 @@ private struct ProjectHeader: View {
     let isRunning: Bool
     let onNewTerminal: () -> Void
     let onCloseAll: () -> Void
+    @State private var isHovering = false
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 6) {
             Image(systemName: "folder.fill")
-                .font(.system(size: 12, weight: .semibold))
+                .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(TerminalTheme.accent)
-                .frame(width: 16)
+                .frame(width: 14)
 
-            VStack(alignment: .leading, spacing: 1) {
-                Text(name)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.92))
-                    .lineLimit(1)
-                Text(pathLabel)
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.35))
-                    .lineLimit(1)
-            }
+            Text(name)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.9))
+                .lineLimit(1)
 
             Spacer(minLength: 0)
-
-            if taskCount > 0 {
-                Text("\(taskCount)")
-                    .font(.system(size: 10, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.55))
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(Capsule().fill(Color.white.opacity(0.1)))
-            }
 
             if isRunning {
                 Circle()
                     .fill(Color(red: 0.35, green: 0.78, blue: 0.45))
-                    .frame(width: 6, height: 6)
+                    .frame(width: 5, height: 5)
+            }
+
+            if isHovering {
+                Button(action: onNewTerminal) {
+                    Image(systemName: "plus")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(.white.opacity(0.6))
+                        .frame(width: 16, height: 16)
+                        .background(RoundedRectangle(cornerRadius: 4, style: .continuous).fill(Color.white.opacity(0.1)))
+                }
+                .buttonStyle(.plain)
+                .help("New Tab Here (⌘T)")
+            } else if taskCount > 0 {
+                Text("\(taskCount)")
+                    .font(.system(size: 9.5, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.5))
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1.5)
+                    .background(RoundedRectangle(cornerRadius: 5, style: .continuous).fill(Color.white.opacity(0.09)))
             }
         }
+        // Fixed content height so hover swaps (badge ↔ +) never reflow the list.
+        .frame(height: 17)
+        .padding(.horizontal, 6)
         .padding(.vertical, 4)
-        .contentShape(Rectangle())
+        .background(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(isHovering ? Color.white.opacity(0.05) : Color.clear)
+        )
+        .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .onHover { isHovering = $0 }
+        .help(pathLabel)
         .contextMenu {
             Button("New Terminal Here", action: onNewTerminal)
             Divider()
@@ -376,41 +390,54 @@ private struct TaskRow: View {
     let isSelected: Bool
     let onSelect: () -> Void
     let onClose: () -> Void
+    @State private var isHovering = false
 
     var body: some View {
         Button(action: onSelect) {
-            HStack(spacing: 8) {
+            HStack(spacing: 6) {
                 Image(systemName: toolSymbol)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(session.isRunning ? TerminalTheme.accent : .white.opacity(0.35))
-                    .frame(width: 16)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(session.isRunning ? TerminalTheme.accent : .white.opacity(0.3))
+                    .frame(width: 14)
 
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(session.title)
-                        .font(.system(size: 12.5, weight: .medium))
-                        .foregroundStyle(.white.opacity(isSelected ? 0.95 : 0.7))
-                        .lineLimit(1)
-                    Text(session.isRunning ? session.toolLabel : "Exited")
-                        .font(.system(size: 10.5))
-                        .foregroundStyle(.white.opacity(0.35))
-                        .lineLimit(1)
-                }
+                Text(session.title)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.white.opacity(isSelected ? 0.95 : (session.isRunning ? 0.65 : 0.45)))
+                    .lineLimit(1)
 
                 Spacer(minLength: 0)
+
+                if isHovering {
+                    Button(action: onClose) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 8, weight: .bold))
+                            .foregroundStyle(.white.opacity(0.55))
+                            .frame(width: 16, height: 16)
+                            .background(Circle().fill(Color.white.opacity(0.1)))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Close Tab")
+                }
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
+            // Fixed content height so the hover close button never reflows
+            // the rows beneath.
+            .frame(height: 17)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3.5)
             .background(
-                Capsule(style: .continuous)
-                    .fill(isSelected ? Color.white.opacity(0.14) : Color.clear)
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(isSelected ? Color.white.opacity(0.13) : (isHovering ? Color.white.opacity(0.05) : Color.clear))
             )
-            .contentShape(Capsule())
+            .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
         }
         .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+        .background(MiddleClickCatcher(action: onClose))
+        .help(session.isRunning ? session.toolLabel : "Exited")
         .contextMenu {
             Button("Close Task", role: .destructive, action: onClose)
         }
-        .padding(.leading, 8)
+        .padding(.leading, 14)
     }
 
     private var toolSymbol: String {
@@ -423,6 +450,116 @@ private struct TaskRow: View {
         case TerminalSession.shellTool: return "terminal.fill"
         default: return "terminal"
         }
+    }
+}
+
+// MARK: - Middle-click closes a tab (browser-style)
+
+/// Hit-test-transparent view that closes the row on middle-click without
+/// stealing left/right clicks from the SwiftUI row.
+private struct MiddleClickCatcher: NSViewRepresentable {
+    let action: () -> Void
+
+    func makeNSView(context: Context) -> CatcherView {
+        let view = CatcherView()
+        view.action = action
+        return view
+    }
+
+    func updateNSView(_ nsView: CatcherView, context: Context) {
+        nsView.action = action
+    }
+
+    final class CatcherView: NSView {
+        var action: (() -> Void)?
+        private var monitor: Any?
+
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if window != nil {
+                installMonitorIfNeeded()
+            } else {
+                removeMonitor()
+            }
+        }
+
+        private func installMonitorIfNeeded() {
+            guard monitor == nil else { return }
+            monitor = NSEvent.addLocalMonitorForEvents(matching: .otherMouseDown) { [weak self] event in
+                guard let self,
+                      event.buttonNumber == 2,
+                      event.window === self.window,
+                      self.bounds.contains(self.convert(event.locationInWindow, from: nil))
+                else { return event }
+                self.action?()
+                return nil
+            }
+        }
+
+        private func removeMonitor() {
+            if let monitor {
+                NSEvent.removeMonitor(monitor)
+                self.monitor = nil
+            }
+        }
+
+        deinit {
+            if let monitor {
+                NSEvent.removeMonitor(monitor)
+            }
+        }
+    }
+}
+
+// MARK: - Drag-to-reorder (live reorder on hover, like Finder sidebar)
+
+private struct WorkspaceDropDelegate: DropDelegate {
+    let target: String
+    @Binding var dragging: String?
+    let store: TerminalSessionStore
+
+    func dropEntered(info: DropInfo) {
+        guard let dragging, dragging != target else { return }
+        MainActor.assumeIsolated {
+            withAnimation(.easeInOut(duration: 0.15)) {
+                store.moveWorkspace(dragging, to: target)
+            }
+        }
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        dragging = nil
+        return true
+    }
+}
+
+private struct SessionDropDelegate: DropDelegate {
+    let target: UUID
+    @Binding var dragging: UUID?
+    let store: TerminalSessionStore
+
+    func dropEntered(info: DropInfo) {
+        guard let dragging, dragging != target else { return }
+        MainActor.assumeIsolated {
+            withAnimation(.easeInOut(duration: 0.15)) {
+                store.moveSession(dragging, to: target)
+            }
+        }
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        dragging = nil
+        return true
     }
 }
 

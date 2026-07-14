@@ -2,8 +2,15 @@ import AppKit
 import Carbon.HIToolbox
 
 enum HotkeyShortcut {
-    static let defaultKeyCode: UInt16 = 40 // K
+    static let defaultKeyCode: UInt16 = UInt16(kVK_Return) // ⌘↩
     static var defaultModifiers: UInt {
+        let flags: NSEvent.ModifierFlags = [.command]
+        return flags.rawValue
+    }
+
+    /// Old default (⌘⌥K); persisted settings still holding it migrate to ⌘↩ on load.
+    static let legacyDefaultKeyCode: UInt16 = 40 // K
+    static var legacyDefaultModifiers: UInt {
         let flags: NSEvent.ModifierFlags = [.command, .option]
         return flags.rawValue
     }

@@ -7,6 +7,7 @@ final class LauncherPanelController: NSObject, ObservableObject {
 
     private var panel: KeyablePanel?
     private var escapeMonitor: Any?
+    private var sizeObserver: NSObjectProtocol?
     private let settings: AppSettings
     private let sessions: SessionStore
     private lazy var launcher = AgentLauncher(settings: settings, sessions: sessions)
@@ -70,8 +71,11 @@ final class LauncherPanelController: NSObject, ObservableObject {
         onOpenSettings?()
     }
 
-    /// Esc: close project picker if open, otherwise hide the launcher.
+    /// Esc: pop UI layers in order — control focus, mention popup, picker, panel.
     func handleEscape() {
+        if LauncherKeyRouter.shared.clearControlFocus?() == true {
+            return
+        }
         if LauncherKeyRouter.shared.isMentionPopupOpen {
             LauncherKeyRouter.shared.closeMentionPopup?()
             return
@@ -94,15 +98,32 @@ final class LauncherPanelController: NSObject, ObservableObject {
         }
     }
 
+    /// ⌘T: hand off to the terminal app itself (opens it if needed).
+    func openTerminal() {
+        hide()
+        Task {
+            try? await FastqTerminalClient.shared.showTerminal()
+        }
+    }
+
     private func installEscapeMonitor() {
         removeEscapeMonitor()
         escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard event.keyCode == 53 else { return event } // Esc
             guard LauncherKeyRouter.shared.isLauncherVisible else { return event }
-            DispatchQueue.main.async {
-                self?.handleEscape()
+            if event.keyCode == 53 { // Esc
+                DispatchQueue.main.async {
+                    self?.handleEscape()
+                }
+                return nil // swallow so TextField can't keep Esc
             }
-            return nil // swallow so TextField can't keep Esc
+            let mods = event.modifierFlags.intersection([.command, .option, .control, .shift])
+            if mods == .command, event.charactersIgnoringModifiers == "t" {
+                DispatchQueue.main.async {
+                    self?.openTerminal()
+                }
+                return nil
+            }
+            return event
         }
     }
 
@@ -144,14 +165,43 @@ final class LauncherPanelController: NSObject, ObservableObject {
             launcher: launcher,
             onDismiss: { [weak self] in self?.hide() },
             onOpenSettings: { [weak self] in self?.openSettings() },
-            onOpenOnboarding: onOpenOnboarding
+            onOpenOnboarding: onOpenOnboarding,
+            onOpenTerminal: { [weak self] in self?.openTerminal() }
         )
         let hosting = NSHostingView(rootView: root)
         hosting.frame = panel.contentView?.bounds ?? .zero
         hosting.autoresizingMask = [.width, .height]
         panel.contentView = hosting
 
+        // The SwiftUI content collapses when there's nothing to list —
+        // track its size and keep the panel hugging it (top edge fixed).
+        sizeObserver = NotificationCenter.default.addObserver(
+            forName: .fastqLauncherPanelSizeChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            guard let height = note.userInfo?["height"] as? CGFloat,
+                  let width = note.userInfo?["width"] as? CGFloat else { return }
+            Task { @MainActor in
+                self?.resizePanel(to: NSSize(width: width, height: height))
+            }
+        }
+
         self.panel = panel
+    }
+
+    private func resizePanel(to size: NSSize) {
+        guard let panel else { return }
+        let current = panel.frame
+        guard abs(current.height - size.height) > 1 || abs(current.width - size.width) > 1 else { return }
+        let top = current.origin.y + current.height
+        let frame = NSRect(
+            x: current.origin.x,
+            y: top - size.height,
+            width: size.width,
+            height: size.height
+        )
+        panel.setFrame(frame, display: true, animate: panel.isVisible)
     }
 
     private func positionPanel(_ panel: NSPanel) {

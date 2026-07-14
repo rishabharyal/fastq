@@ -67,6 +67,26 @@ final class FastqTerminalClient {
         revealTerminalApp()
     }
 
+    /// Launcher ⌘T: open/reveal the terminal window. Starts the app if
+    /// needed; with no live sessions the window would stay hidden, so open a
+    /// plain shell tab in that case (createSession shows the window).
+    func showTerminal() async throws {
+        try await ensureTerminalRunning()
+        if try await listSessions().isEmpty {
+            let home = NSHomeDirectory()
+            _ = try await createSession(CreateSessionRequest(
+                title: "Terminal",
+                projectName: "Home",
+                projectPath: home,
+                command: "",
+                prompt: "",
+                tool: "shell"
+            ))
+        } else {
+            revealTerminalApp()
+        }
+    }
+
     /// Bring Fastq Terminal forward (restores a window hidden via the red close button).
     private func revealTerminalApp() {
         let apps = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)

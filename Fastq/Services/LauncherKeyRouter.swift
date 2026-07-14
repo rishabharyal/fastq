@@ -14,4 +14,8 @@ final class LauncherKeyRouter {
     var onDismissLauncher: (() -> Void)?
     var onEscape: (() -> Void)?
     var attachFiles: (([URL]) -> Void)?
+    /// Synchronously focus the prompt text view (type-anywhere routing).
+    var focusPromptNow: (() -> Void)?
+    /// Esc while a chip has Tab-focus: returns true when it consumed the key.
+    var clearControlFocus: (() -> Bool)?
 }

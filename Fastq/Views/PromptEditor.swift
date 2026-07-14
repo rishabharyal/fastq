@@ -20,16 +20,16 @@ struct PromptEditor: NSViewRepresentable {
     var isEnabled: Bool
     var isFocused: Bool
     var mentionActive: Bool
-    /// When false, Space behaves normally (e.g. project picker open).
-    var spaceHoldEnabled: Bool = true
+    /// True while mic dictation streams into `text` — keeps the caret at the end.
+    var isDictating: Bool = false
     var onSubmit: () -> Void
     var onMentionQueryChange: (PromptMentionQuery?) -> Void
     var onMentionNavigate: ((Int) -> Void)?
     var onMentionConfirm: (() -> Void)?
     var onMentionCancel: (() -> Void)?
-    var onSpaceHoldBegin: (() -> Void)?
-    var onSpaceHoldEnd: (() -> Void)?
-    var onSpaceHoldCancel: (() -> Void)?
+    /// Reports the text's natural height (clamped by the caller) so the
+    /// editor hugs its content instead of reserving its max height.
+    var onHeightChange: ((CGFloat) -> Void)? = nil
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -80,23 +80,14 @@ struct PromptEditor: NSViewRepresentable {
         textView.mentionActive = { [weak coordinator = context.coordinator] in
             coordinator?.parent.mentionActive ?? false
         }
-        textView.spaceHoldEnabled = { [weak coordinator = context.coordinator] in
-            coordinator?.parent.spaceHoldEnabled ?? true
-        }
-        textView.onSpaceHoldBegin = { [weak coordinator = context.coordinator] in
-            coordinator?.parent.onSpaceHoldBegin?()
-        }
-        textView.onSpaceHoldEnd = { [weak coordinator = context.coordinator] in
-            coordinator?.parent.onSpaceHoldEnd?()
-        }
-        textView.onSpaceHoldCancel = { [weak coordinator = context.coordinator] in
-            coordinator?.parent.onSpaceHoldCancel?()
-        }
         textView.placeholderString = placeholder
 
         scroll.documentView = textView
         context.coordinator.textView = textView
         context.coordinator.startObservingFocusRequests()
+        DispatchQueue.main.async { [weak coordinator = context.coordinator] in
+            coordinator?.reportHeight()
+        }
         return scroll
     }
 
@@ -105,14 +96,16 @@ struct PromptEditor: NSViewRepresentable {
         guard let textView = context.coordinator.textView else { return }
 
         // While listening, parent drives text via live STT — avoid caret fights.
-        if textView.string != text, !textView.isSpaceHolding {
+        if textView.string != text, !isDictating {
             let selected = textView.selectedRanges
             textView.string = text
             textView.selectedRanges = selected
-        } else if textView.string != text, textView.isSpaceHolding {
+            context.coordinator.applyMentionHighlight()
+        } else if textView.string != text, isDictating {
             textView.string = text
             let end = textView.string.utf16.count
             textView.setSelectedRange(NSRange(location: end, length: 0))
+            context.coordinator.applyMentionHighlight()
         }
 
         textView.isEditable = isEnabled
@@ -133,21 +126,13 @@ struct PromptEditor: NSViewRepresentable {
         textView.mentionActive = { [weak coordinator = context.coordinator] in
             coordinator?.parent.mentionActive ?? false
         }
-        textView.spaceHoldEnabled = { [weak coordinator = context.coordinator] in
-            coordinator?.parent.spaceHoldEnabled ?? true
-        }
-        textView.onSpaceHoldBegin = { [weak coordinator = context.coordinator] in
-            coordinator?.parent.onSpaceHoldBegin?()
-        }
-        textView.onSpaceHoldEnd = { [weak coordinator = context.coordinator] in
-            coordinator?.parent.onSpaceHoldEnd?()
-        }
-        textView.onSpaceHoldCancel = { [weak coordinator = context.coordinator] in
-            coordinator?.parent.onSpaceHoldCancel?()
-        }
 
         if isFocused, isEnabled {
             context.coordinator.focusPrompt(selectAll: false)
+        }
+
+        DispatchQueue.main.async { [weak coordinator = context.coordinator] in
+            coordinator?.reportHeight()
         }
     }
 
@@ -166,12 +151,18 @@ struct PromptEditor: NSViewRepresentable {
 
         func startObservingFocusRequests() {
             stopObservingFocusRequests()
+            MainActor.assumeIsolated {
+                LauncherKeyRouter.shared.focusPromptNow = { [weak self] in
+                    self?.focusPrompt(selectAll: false)
+                }
+            }
             focusObserver = NotificationCenter.default.addObserver(
                 forName: .fastqFocusLauncherPrompt,
                 object: nil,
                 queue: .main
-            ) { [weak self] _ in
-                self?.focusPrompt(selectAll: true)
+            ) { [weak self] note in
+                let caret = note.userInfo?["caret"] as? Int
+                self?.focusPrompt(selectAll: caret == nil, caret: caret)
             }
         }
 
@@ -182,17 +173,19 @@ struct PromptEditor: NSViewRepresentable {
             }
         }
 
-        func focusPrompt(selectAll: Bool) {
+        func focusPrompt(selectAll: Bool, caret: Int? = nil) {
             guard parent.isEnabled, let textView else { return }
             guard let window = textView.window ?? NSApp.keyWindow else { return }
 
             window.makeKeyAndOrderFront(nil)
             if window.makeFirstResponder(textView) {
-                if selectAll, !textView.string.isEmpty {
+                let length = textView.string.utf16.count
+                if let caret {
+                    textView.setSelectedRange(NSRange(location: min(max(caret, 0), length), length: 0))
+                } else if selectAll, !textView.string.isEmpty {
                     textView.selectAll(nil)
                 } else {
-                    let end = textView.string.utf16.count
-                    textView.setSelectedRange(NSRange(location: end, length: 0))
+                    textView.setSelectedRange(NSRange(location: length, length: 0))
                 }
             }
         }
@@ -208,8 +201,47 @@ struct PromptEditor: NSViewRepresentable {
         func textDidChange(_ notification: Notification) {
             guard let textView else { return }
             parent.text = textView.string
+            applyMentionHighlight()
+            reportHeight()
             parent.onMentionQueryChange(Self.mentionQuery(in: textView))
         }
+
+        func reportHeight() {
+            guard let textView,
+                  let container = textView.textContainer,
+                  let layoutManager = textView.layoutManager else { return }
+            layoutManager.ensureLayout(for: container)
+            let height = layoutManager.usedRect(for: container).height
+                + textView.textContainerInset.height * 2
+            parent.onHeightChange?(height)
+        }
+
+        /// Tint `@file` mentions so they read as tokens, not prose. Uses
+        /// layout-manager temporary attributes: purely visual, never touches
+        /// the plain string that gets submitted.
+        func applyMentionHighlight() {
+            guard let textView, let layoutManager = textView.layoutManager else { return }
+            let ns = textView.string as NSString
+            let full = NSRange(location: 0, length: ns.length)
+            layoutManager.removeTemporaryAttribute(.foregroundColor, forCharacterRange: full)
+            Self.mentionTokenRegex.enumerateMatches(in: textView.string, range: full) { match, _, _ in
+                guard let range = match?.range else { return }
+                // Token must start the text or follow whitespace (same rule
+                // as the live mention query) — emails etc. stay untinted.
+                if range.location > 0 {
+                    let prev = ns.character(at: range.location - 1)
+                    guard let scalar = UnicodeScalar(prev),
+                          CharacterSet.whitespacesAndNewlines.contains(scalar) else { return }
+                }
+                layoutManager.addTemporaryAttribute(
+                    .foregroundColor,
+                    value: NSColor.controlAccentColor,
+                    forCharacterRange: range
+                )
+            }
+        }
+
+        private static let mentionTokenRegex = try! NSRegularExpression(pattern: "@[^\\s@]+")
 
         func textViewDidChangeSelection(_ notification: Notification) {
             guard let textView else { return }
@@ -267,17 +299,6 @@ final class PromptNSTextView: NSTextView {
     var onMentionConfirm: (() -> Void)?
     var onMentionCancel: (() -> Void)?
     var mentionActive: (() -> Bool)?
-    var spaceHoldEnabled: (() -> Bool)?
-    var onSpaceHoldBegin: (() -> Void)?
-    var onSpaceHoldEnd: (() -> Void)?
-    var onSpaceHoldCancel: (() -> Void)?
-
-    private(set) var isSpaceHolding = false
-    private var spaceHoldTimer: Timer?
-    private var spaceKeyDown = false
-
-    /// Hold threshold before Space becomes dictation (quick tap still inserts " ").
-    private let holdThreshold: TimeInterval = 0.16
 
     var placeholderString: String = "" {
         didSet { needsDisplay = true }
@@ -291,36 +312,9 @@ final class PromptNSTextView: NSTextView {
         return ok
     }
 
-    override func resignFirstResponder() -> Bool {
-        cancelSpaceHoldIfNeeded()
-        return super.resignFirstResponder()
-    }
-
     override func keyDown(with event: NSEvent) {
         let mention = mentionActive?() == true
         let isReturn = event.keyCode == 36 || event.keyCode == 76
-        let isSpace = event.keyCode == 49
-        let mods = event.modifierFlags.intersection([.command, .option, .control, .shift])
-
-        // Hold-Space → dictation (no modifiers, mentions closed).
-        if isSpace,
-           mods.isEmpty,
-           spaceHoldEnabled?() == true,
-           !mention {
-            if event.isARepeat {
-                return // swallow key-repeat while held
-            }
-            spaceKeyDown = true
-            spaceHoldTimer?.invalidate()
-            let timer = Timer(timeInterval: holdThreshold, repeats: false) { [weak self] _ in
-                guard let self, self.spaceKeyDown, !self.isSpaceHolding else { return }
-                self.isSpaceHolding = true
-                self.onSpaceHoldBegin?()
-            }
-            RunLoop.main.add(timer, forMode: .common)
-            spaceHoldTimer = timer
-            return
-        }
 
         if mention {
             if event.keyCode == 125 {
@@ -350,35 +344,6 @@ final class PromptNSTextView: NSTextView {
             return
         }
         super.keyDown(with: event)
-    }
-
-    override func keyUp(with event: NSEvent) {
-        if event.keyCode == 49 {
-            spaceHoldTimer?.invalidate()
-            spaceHoldTimer = nil
-            spaceKeyDown = false
-
-            if isSpaceHolding {
-                isSpaceHolding = false
-                onSpaceHoldEnd?()
-            } else if spaceHoldEnabled?() == true,
-                      event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty {
-                // Quick tap → insert a normal space.
-                insertText(" ", replacementRange: selectedRange())
-            }
-            return
-        }
-        super.keyUp(with: event)
-    }
-
-    private func cancelSpaceHoldIfNeeded() {
-        spaceHoldTimer?.invalidate()
-        spaceHoldTimer = nil
-        spaceKeyDown = false
-        if isSpaceHolding {
-            isSpaceHolding = false
-            onSpaceHoldCancel?()
-        }
     }
 
     override func draw(_ dirtyRect: NSRect) {

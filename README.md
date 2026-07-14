@@ -2,7 +2,7 @@
 
 Two apps, one workflow:
 
-1. **Fastq** — Raycast-style launcher (customizable hotkey, default ⌘⌥K)  
+1. **Fastq** — Raycast-style launcher (customizable hotkey, default ⌘↩)  
 2. **Fastq Terminal** — tabbed agent terminal, rendered by **Ghostty** (GPU/Metal, like cmux)  
 
 You only interact with the **launcher**. When you start Claude / Codex / Cursor Agent / Grok / OpenCode, Fastq **starts Fastq Terminal by itself** and opens a new tab there.
@@ -34,7 +34,7 @@ Or in Xcode (`open Fastq.xcworkspace`):
 
 1. Build **FastqTerminal** once (⌘B on that scheme) so the `.app` exists  
 2. Run **Fastq**  
-3. Hotkey (default ⌘⌥K) → launch an agent → Terminal opens automatically  
+3. Hotkey (default ⌘↩) → launch an agent → Terminal opens automatically  
 
 You should **not** need to open Fastq Terminal manually.
 

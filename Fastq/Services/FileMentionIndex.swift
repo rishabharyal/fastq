@@ -102,7 +102,9 @@ actor FileMentionEngine {
         }
 
         items = collected
-        haystacks = collected.map { ($0.relativePath + " " + $0.name).lowercased() }
+        // Include the project name so `@subsets_api/mod`-style queries match —
+        // the same `project/relative/path` shape mentions are inserted as.
+        haystacks = collected.map { ($0.projectName + "/" + $0.relativePath + " " + $0.name).lowercased() }
     }
 
     func search(query: String, primaryPath: String?, limit: Int) -> [FileMentionItem] {
@@ -185,19 +187,20 @@ actor FileMentionEngine {
         ]
         proc.currentDirectoryURL = URL(fileURLWithPath: root)
         let out = Pipe()
-        let err = Pipe()
         proc.standardOutput = out
-        proc.standardError = err
+        proc.standardError = FileHandle.nullDevice
 
         do {
             try proc.run()
-            proc.waitUntilExit()
         } catch {
             return nil
         }
-        guard proc.terminationStatus == 0 else { return nil }
-
+        // Drain the pipe BEFORE waiting: output larger than the ~64KB pipe
+        // buffer would otherwise deadlock (git blocks writing, we block on
+        // exit) and the spinner never stops.
         let data = out.fileHandleForReading.readDataToEndOfFile()
+        proc.waitUntilExit()
+        guard proc.terminationStatus == 0 else { return nil }
         guard !data.isEmpty else { return [] }
 
         var results: [FileMentionItem] = []
@@ -247,17 +250,18 @@ actor FileMentionEngine {
         ]
         let out = Pipe()
         proc.standardOutput = out
-        proc.standardError = Pipe()
+        proc.standardError = FileHandle.nullDevice
 
         do {
             try proc.run()
-            proc.waitUntilExit()
         } catch {
             return nil
         }
+        // Same pipe-drain-before-wait as gitList — see comment there.
+        let data = out.fileHandleForReading.readDataToEndOfFile()
+        proc.waitUntilExit()
         guard proc.terminationStatus == 0 else { return nil }
 
-        let data = out.fileHandleForReading.readDataToEndOfFile()
         var results: [FileMentionItem] = []
         results.reserveCapacity(1_024)
         let rootPrefix = root.hasSuffix("/") ? root : root + "/"
