@@ -46,9 +46,15 @@ final class LauncherPanelController: NSObject, ObservableObject {
         installEscapeMonitor()
         NSApp.activate(ignoringOtherApps: true)
         panel.makeKeyAndOrderFront(nil)
-        panel.makeFirstResponder(panel.contentView)
         isVisible = true
         LauncherKeyRouter.shared.isLauncherVisible = true
+        // Focus the prompt after the panel is key (don't steal first responder to contentView).
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: .fastqFocusLauncherPrompt, object: nil)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            NotificationCenter.default.post(name: .fastqFocusLauncherPrompt, object: nil)
+        }
     }
 
     func hide() {
@@ -66,6 +72,10 @@ final class LauncherPanelController: NSObject, ObservableObject {
 
     /// Esc: close project picker if open, otherwise hide the launcher.
     func handleEscape() {
+        if LauncherKeyRouter.shared.isMentionPopupOpen {
+            LauncherKeyRouter.shared.closeMentionPopup?()
+            return
+        }
         if LauncherKeyRouter.shared.isProjectPickerOpen {
             LauncherKeyRouter.shared.closePicker?()
             return
@@ -123,7 +133,7 @@ final class LauncherPanelController: NSObject, ObservableObject {
         panel.titleVisibility = .hidden
         panel.titlebarAppearsTransparent = true
         panel.isMovableByWindowBackground = true
-        panel.animationBehavior = .utilityWindow
+        panel.animationBehavior = .none
         panel.onEscape = { [weak self] in
             self?.handleEscape()
         }

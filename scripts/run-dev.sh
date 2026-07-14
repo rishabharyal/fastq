@@ -6,7 +6,7 @@ OUT="$ROOT/build/DevProducts"
 mkdir -p "$OUT"
 
 echo "Building Fastq Terminal…"
-# Don't override CONFIGURATION_BUILD_DIR — SPM packages (SwiftTerm) break with that.
+# Don't override CONFIGURATION_BUILD_DIR — SPM packages (GhosttyKit) break with that.
 xcodebuild -project "$ROOT/FastqTerminal.xcodeproj" -scheme FastqTerminal \
   -configuration Debug -derivedDataPath "$ROOT/build/DerivedDataTerminal" \
   -destination 'platform=macOS' build

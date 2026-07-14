@@ -21,6 +21,14 @@ struct LauncherView: View {
     @State private var showProjectPicker = false
     @FocusState private var promptFocused: Bool
 
+    @StateObject private var fileMentions = FileMentionIndex()
+    @StateObject private var voice = VoiceDictationService()
+    @State private var mentionQuery: PromptMentionQuery?
+    @State private var mentionResults: [FileMentionItem] = []
+    @State private var mentionSelection = 0
+    @State private var mentionVisible = false
+    @State private var voiceError: String?
+
     private var selectedProject: ProjectFolder? {
         if let selectedProjectID {
             return settings.projects.first { $0.id == selectedProjectID }
@@ -56,10 +64,20 @@ struct LauncherView: View {
                 projectPickerOverlay
             }
         }
+        .overlay(alignment: .topLeading) {
+            if mentionVisible {
+                mentionPopup
+                    .padding(.leading, 46)
+                    .padding(.top, 56)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
         .onAppear {
             bootstrapSelection()
             focusPromptSoon()
             installKeyMonitors()
+            refreshMentionIndex()
+            voice.prepare()
         }
         .onDisappear {
             removeKeyMonitors()
@@ -77,6 +95,18 @@ struct LauncherView: View {
                 focusPromptSoon()
             }
         }
+        .onChange(of: selectedProjectID) { _, _ in
+            refreshMentionIndex()
+        }
+        .onChange(of: settings.projects) { _, _ in
+            refreshMentionIndex()
+        }
+        .onChange(of: fileMentions.results) { _, newValue in
+            mentionResults = newValue
+            if mentionSelection >= newValue.count {
+                mentionSelection = max(0, newValue.count - 1)
+            }
+        }
         .alert("Couldn’t launch agent", isPresented: Binding(
             get: { errorMessage != nil },
             set: { if !$0 { errorMessage = nil } }
@@ -85,34 +115,171 @@ struct LauncherView: View {
         } message: {
             Text(errorMessage ?? "")
         }
+        .alert("Voice input", isPresented: Binding(
+            get: { voiceError != nil },
+            set: { if !$0 { voiceError = nil } }
+        )) {
+            Button("OK", role: .cancel) { voiceError = nil }
+        } message: {
+            Text(voiceError ?? "")
+        }
+        .onChange(of: voice.phase) { _, phase in
+            if case .failed(let message) = phase {
+                voiceError = message
+            }
+        }
     }
 
-    // MARK: - Header
+    // MARK: - Voice
+
+    private var voiceButton: some View {
+        Button {
+            // Click still works as a toggle for accessibility / trackpad users.
+            if voice.isListening {
+                voice.endHold()
+            } else {
+                voice.beginHold(currentPrompt: prompt) { prompt = $0 }
+            }
+        } label: {
+            ZStack {
+                if voice.isListening {
+                    VoicePulseRing(level: voice.level)
+                }
+                Circle()
+                    .fill(voice.isListening
+                          ? Color.accentColor.opacity(0.9)
+                          : Color.white.opacity(0.08))
+                    .frame(width: 30, height: 30)
+                Image(systemName: "mic.fill")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(voice.isListening ? .white : .secondary)
+                    .scaleEffect(voice.isListening ? 1 + CGFloat(voice.level) * 0.2 : 1)
+                    .animation(.easeOut(duration: 0.08), value: voice.level)
+            }
+            .frame(width: 36, height: 36)
+        }
+        .buttonStyle(.plain)
+        .disabled(showProjectPicker || {
+            if case .requestingAccess = voice.phase { return true }
+            return false
+        }())
+        .help(voiceHelp)
+        .padding(.top, 0)
+    }
+
+    private var voiceHelp: String {
+        switch voice.phase {
+        case .listening:
+            return "Listening… release Space to finish"
+        case .requestingAccess:
+            return "Starting microphone…"
+        case .failed(let message):
+            return message
+        default:
+            return "Hold Space to dictate (live speech → text)"
+        }
+    }
+
+    private var listeningBanner: some View {
+        HStack(spacing: 10) {
+            VoiceWaveform(level: voice.level)
+                .frame(width: 56, height: 18)
+            Text(voice.liveTranscript.isEmpty ? "Listening…" : voice.liveTranscript)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.primary.opacity(0.9))
+                .lineLimit(1)
+            Spacer(minLength: 0)
+            Text("release Space")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(Capsule().fill(Color.white.opacity(0.08)))
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.accentColor.opacity(0.14))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .strokeBorder(Color.accentColor.opacity(0.28), lineWidth: 1)
+                )
+        )
+        .padding(.horizontal, 18)
+        .padding(.bottom, 4)
+        .transition(.move(edge: .top).combined(with: .opacity))
+    }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .center, spacing: 12) {
-                Image(systemName: "sparkle.magnifyingglass")
-                    .font(.system(size: 18, weight: .semibold))
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: "chevron.left.forwardslash.chevron.right")
+                    .font(.system(size: 15, weight: .medium))
                     .foregroundStyle(.secondary)
+                    .padding(.top, 3)
 
-                // Single-line: Return launches. (Vertical TextField eats Return as newline.)
-                TextField("Ask an agent about this project…", text: $prompt)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 20, weight: .medium))
-                    .focused($promptFocused)
-                    .disabled(showProjectPicker)
-                    .onSubmit(submitPrimary)
+                PromptEditor(
+                    text: $prompt,
+                    placeholder: "Ask an agent…  hold Space to talk · @ for files",
+                    isEnabled: !showProjectPicker,
+                    isFocused: promptFocused && !showProjectPicker,
+                    mentionActive: mentionVisible,
+                    spaceHoldEnabled: !showProjectPicker && !mentionVisible,
+                    onSubmit: submitPrimary,
+                    onMentionQueryChange: handleMentionQuery,
+                    onMentionNavigate: { delta in
+                        guard !mentionResults.isEmpty else { return }
+                        let count = mentionResults.count
+                        mentionSelection = ((mentionSelection + delta) % count + count) % count
+                    },
+                    onMentionConfirm: confirmMention,
+                    onMentionCancel: {
+                        mentionVisible = false
+                        LauncherKeyRouter.shared.isMentionPopupOpen = false
+                        mentionQuery = nil
+                    },
+                    onSpaceHoldBegin: {
+                        voice.beginHold(currentPrompt: prompt) { prompt = $0 }
+                    },
+                    onSpaceHoldEnd: {
+                        voice.endHold()
+                    },
+                    onSpaceHoldCancel: {
+                        voice.cancelHold()
+                    }
+                )
+                .frame(minHeight: 24, maxHeight: 72)
 
-                if isLaunching {
-                    ProgressView()
-                        .controlSize(.small)
-                } else {
-                    Text("Launch")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.secondary)
-                    KeyCap(symbol: "↩")
+                voiceButton
+
+                Group {
+                    if isLaunching {
+                        ProgressView()
+                            .controlSize(.small)
+                            .padding(.top, 2)
+                    } else {
+                        Button(action: submitPrimary) {
+                            Text("Go")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 7)
+                                .background(
+                                    Capsule(style: .continuous)
+                                        .fill(Color.accentColor.opacity(canGo ? 1 : 0.45))
+                                )
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(!canGo)
+                        .padding(.top, 0)
+                        .help("Return to go · Shift+Return for a new line")
+                    }
                 }
+            }
+
+            if voice.isListening {
+                listeningBanner
             }
 
             HStack(spacing: 8) {
@@ -121,15 +288,23 @@ struct LauncherView: View {
                 modelMenu
                 Spacer(minLength: 0)
                 Button(action: pickAttachments) {
-                    ChipLabel(icon: "paperclip", title: attachments.isEmpty ? "Attach" : "\(attachments.count)")
+                    ChipLabel(systemIcon: "paperclip", title: attachments.isEmpty ? "Attach" : "\(attachments.count)")
                 }
                 .buttonStyle(.plain)
                 .help("Attach files — ⌘V pastes files from the clipboard")
             }
         }
         .padding(.horizontal, 18)
-        .padding(.top, 18)
-        .padding(.bottom, 14)
+        .padding(.top, 16)
+        .padding(.bottom, 12)
+    }
+
+    private var canGo: Bool {
+        if showProjectPicker { return false }
+        if isLaunching { return false }
+        let hasPrompt = !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let hasSession = selectedSessionID != nil
+        return hasPrompt || hasSession
     }
 
     private var projectChip: some View {
@@ -140,7 +315,7 @@ struct LauncherView: View {
             }
         } label: {
             ChipLabel(
-                icon: "folder.fill",
+                systemIcon: "folder.fill",
                 title: selectedProject?.name ?? "Project",
                 isActive: showProjectPicker
             )
@@ -182,7 +357,7 @@ struct LauncherView: View {
                 }
             )
             .padding(.leading, 18)
-            .padding(.top, 78)
+            .padding(.top, 72)
             .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .topLeading)))
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -194,13 +369,22 @@ struct LauncherView: View {
                 Button {
                     selectedToolID = tool.id
                 } label: {
-                    Label(tool.displayName, systemImage: tool.kind.systemImage)
+                    Label {
+                        Text(tool.displayName)
+                    } icon: {
+                        AgentBrandIcon(kind: tool.kind, size: 12)
+                    }
                 }
             }
         } label: {
-            ChipLabel(icon: selectedTool?.kind.systemImage ?? "hammer", title: selectedTool?.displayName ?? "Tool")
+            ChipLabel(
+                brand: selectedTool?.kind,
+                systemIcon: selectedTool?.kind.systemImage ?? "hammer",
+                title: selectedTool?.displayName ?? "Tool"
+            )
         }
         .menuStyle(.borderlessButton)
+        .fixedSize()
     }
 
     private var modelMenu: some View {
@@ -213,9 +397,95 @@ struct LauncherView: View {
                 }
             }
         } label: {
-            ChipLabel(icon: "cpu", title: selectedModel.displayName)
+            ChipLabel(systemIcon: "cpu", title: selectedModel.displayName)
         }
         .menuStyle(.borderlessButton)
+        .fixedSize()
+    }
+
+    private var mentionPopup: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 6) {
+                Text("Files")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+                if fileMentions.isIndexing {
+                    ProgressView().controlSize(.mini)
+                    Text("indexing…")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                } else if fileMentions.indexedCount > 0 {
+                    Text("\(fileMentions.indexedCount)")
+                        .font(.system(size: 10, weight: .medium, design: .rounded))
+                        .foregroundStyle(.secondary.opacity(0.7))
+                }
+                Spacer()
+                Text("↵ select · fuzzy")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.secondary.opacity(0.7))
+            }
+            .padding(.horizontal, 12)
+            .padding(.top, 10)
+            .padding(.bottom, 6)
+
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 2) {
+                    ForEach(Array(mentionResults.prefix(12).enumerated()), id: \.element.id) { index, item in
+                        Button {
+                            mentionSelection = index
+                            confirmMention()
+                        } label: {
+                            HStack(spacing: 10) {
+                                Image(systemName: "doc.text")
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 18)
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(item.name)
+                                        .font(.system(size: 13, weight: .medium))
+                                        .lineLimit(1)
+                                        .foregroundStyle(.primary)
+                                    Text("\(item.projectName) · \(item.relativePath)")
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                }
+                                Spacer(minLength: 0)
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 7)
+                            .background(
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .fill(index == mentionSelection ? Color.white.opacity(0.12) : Color.clear)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+
+                    if mentionResults.isEmpty, !fileMentions.isIndexing {
+                        Text(mentionQuery?.filter.isEmpty == false ? "No matches" : "Type to fuzzy-find files…")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 10)
+                    }
+                }
+                .padding(.horizontal, 6)
+                .padding(.bottom, 8)
+            }
+            .frame(maxHeight: 220)
+        }
+        .frame(width: 420)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
+                )
+                .shadow(color: .black.opacity(0.35), radius: 18, y: 8)
+        )
     }
 
     private var attachmentStrip: some View {
@@ -397,7 +667,7 @@ struct LauncherView: View {
                     launcher.quit(session)
                 }
             } else {
-                FooterAction(title: "Launch Agent", key: "↩", action: submitPrimary)
+                FooterAction(title: "Go", key: "↩", action: submitPrimary)
             }
 
             Divider().frame(height: 14)
@@ -440,11 +710,13 @@ struct LauncherView: View {
     }
 
     private func focusPromptSoon() {
+        promptFocused = true
         DispatchQueue.main.async {
-            promptFocused = true
+            NotificationCenter.default.post(name: .fastqFocusLauncherPrompt, object: nil)
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-            promptFocused = true
+            self.promptFocused = true
+            NotificationCenter.default.post(name: .fastqFocusLauncherPrompt, object: nil)
         }
     }
 
@@ -475,7 +747,8 @@ struct LauncherView: View {
                 project: project,
                 tool: tool,
                 model: selectedModel,
-                attachments: attachments
+                attachments: attachments,
+                extraProjectPaths: settings.projects.map(\.path)
             )
             settings.markProjectUsed(project)
             selectedSessionID = session.id
@@ -521,9 +794,19 @@ struct LauncherView: View {
         removeKeyMonitors()
 
         let pickerBinding = $showProjectPicker
+        let mentionVisibleBinding = $mentionVisible
+        let mentionQueryBinding = $mentionQuery
+        let mentionResultsBinding = $mentionResults
         LauncherKeyRouter.shared.isProjectPickerOpen = showProjectPicker
         LauncherKeyRouter.shared.closePicker = {
             pickerBinding.wrappedValue = false
+        }
+        LauncherKeyRouter.shared.closeMentionPopup = {
+            mentionVisibleBinding.wrappedValue = false
+            LauncherKeyRouter.shared.isMentionPopupOpen = false
+            mentionQueryBinding.wrappedValue = nil
+            mentionResultsBinding.wrappedValue = []
+            fileMentions.clearResults()
         }
         LauncherKeyRouter.shared.attachFiles = { [attachments = $attachments] urls in
             var current = attachments.wrappedValue
@@ -533,10 +816,22 @@ struct LauncherView: View {
             attachments.wrappedValue = current
         }
 
-        // Only handle ⌘V file paste here. Esc is owned by LauncherPanelController
-        // so it always hides the panel even when the TextField has focus.
+        // Arrow keys cycle active agent tabs; ⌘V attaches files.
+        // Esc is owned by LauncherPanelController.
         pasteMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             guard !LauncherKeyRouter.shared.isProjectPickerOpen else { return event }
+
+            // ↑ / ↓ cycle Fastq Terminal tabs + launcher session selection —
+            // but not while the @-mention popup is open (PromptEditor owns those).
+            if event.keyCode == 125 || event.keyCode == 126 {
+                if LauncherKeyRouter.shared.isMentionPopupOpen { return event }
+                let delta = event.keyCode == 125 ? 1 : -1
+                DispatchQueue.main.async {
+                    cycleActiveSessions(by: delta)
+                }
+                return nil
+            }
+
             guard event.modifierFlags.contains(.command),
                   event.charactersIgnoringModifiers?.lowercased() == "v" else {
                 return event
@@ -554,11 +849,88 @@ struct LauncherView: View {
         }
     }
 
+    private func cycleActiveSessions(by delta: Int) {
+        let list = sessions.sessions
+        guard !list.isEmpty else { return }
+        let currentIndex = list.firstIndex(where: { $0.id == selectedSessionID }) ?? 0
+        let count = list.count
+        let nextIndex = ((currentIndex + delta) % count + count) % count
+        let next = list[nextIndex]
+        selectedSessionID = next.id
+        if next.hostedInFastqTerminal {
+            launcher.selectTerminalTab(next.id)
+        }
+    }
+
     private func removeKeyMonitors() {
         if let pasteMonitor {
             NSEvent.removeMonitor(pasteMonitor)
             self.pasteMonitor = nil
         }
+    }
+
+    // MARK: - @ file mentions
+
+    private func refreshMentionIndex() {
+        fileMentions.ensureIndexed(
+            projects: settings.projects,
+            primaryPath: selectedProject?.path
+        )
+    }
+
+    private func handleMentionQuery(_ query: PromptMentionQuery?) {
+        mentionQuery = query
+        guard let query else {
+            mentionVisible = false
+            LauncherKeyRouter.shared.isMentionPopupOpen = false
+            fileMentions.clearResults()
+            mentionResults = []
+            return
+        }
+        // Index once in background; never rescan on every keystroke.
+        refreshMentionIndex()
+        mentionVisible = true
+        LauncherKeyRouter.shared.isMentionPopupOpen = true
+        // Fuzzy search off the main thread; results arrive via onChange.
+        fileMentions.query(query.filter, primaryPath: selectedProject?.path, limit: 40)
+        // Keep prior selection stable while results refresh.
+        if mentionResults.isEmpty {
+            mentionSelection = 0
+        }
+    }
+
+    private func confirmMention() {
+        let list = fileMentions.results.isEmpty ? mentionResults : fileMentions.results
+        guard mentionVisible,
+              let query = mentionQuery,
+              list.indices.contains(mentionSelection) else {
+            mentionVisible = false
+            LauncherKeyRouter.shared.isMentionPopupOpen = false
+            return
+        }
+        let item = list[mentionSelection]
+        let ns = prompt as NSString
+        guard NSMaxRange(query.range) <= ns.length else {
+            mentionVisible = false
+            LauncherKeyRouter.shared.isMentionPopupOpen = false
+            return
+        }
+
+        let insertion: String
+        if let primary = selectedProject?.path, item.path.hasPrefix(primary + "/") {
+            insertion = "@" + item.relativePath
+        } else {
+            insertion = "@\(item.projectName)/\(item.relativePath)"
+        }
+
+        let replaced = ns.replacingCharacters(in: query.range, with: insertion + " ")
+        prompt = replaced
+        mentionVisible = false
+        LauncherKeyRouter.shared.isMentionPopupOpen = false
+        mentionQuery = nil
+        mentionResults = []
+        fileMentions.clearResults()
+        focusPromptSoon()
     }
 }
 
@@ -577,8 +949,7 @@ private struct SessionRow: View {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(Color.white.opacity(0.08))
                     .frame(width: 34, height: 34)
-                Image(systemName: session.tool.systemImage)
-                    .foregroundStyle(.primary)
+                AgentBrandIcon(kind: session.tool, size: 16)
             }
 
             VStack(alignment: .leading, spacing: 2) {
@@ -620,14 +991,26 @@ private struct SessionRow: View {
 }
 
 private struct ChipLabel: View {
-    let icon: String
+    var brand: AgentToolKind? = nil
+    var systemIcon: String? = nil
     let title: String
     var isActive: Bool = false
 
+    init(brand: AgentToolKind? = nil, systemIcon: String? = nil, icon: String? = nil, title: String, isActive: Bool = false) {
+        self.brand = brand
+        self.systemIcon = systemIcon ?? icon
+        self.title = title
+        self.isActive = isActive
+    }
+
     var body: some View {
         HStack(spacing: 6) {
-            Image(systemName: icon)
-                .font(.system(size: 11, weight: .semibold))
+            if let brand {
+                AgentBrandIcon(kind: brand, size: 11)
+            } else if let systemIcon {
+                Image(systemName: systemIcon)
+                    .font(.system(size: 11, weight: .semibold))
+            }
             Text(title)
                 .font(.system(size: 12, weight: .medium))
                 .lineLimit(1)
@@ -644,6 +1027,7 @@ private struct ChipLabel: View {
             Capsule()
                 .strokeBorder(Color.white.opacity(isActive ? 0.22 : 0), lineWidth: 1)
         )
+        .fixedSize()
         .animation(.easeOut(duration: 0.15), value: isActive)
     }
 }
@@ -699,5 +1083,39 @@ private struct LauncherBackground: View {
             )
             Color.black.opacity(0.22)
         }
+    }
+}
+
+// MARK: - Voice animations
+
+private struct VoicePulseRing: View {
+    var level: Float
+
+    var body: some View {
+        Circle()
+            .stroke(Color.accentColor.opacity(0.35 + Double(level) * 0.4), lineWidth: 2)
+            .frame(width: 30 + CGFloat(level) * 14, height: 30 + CGFloat(level) * 14)
+            .animation(.easeOut(duration: 0.1), value: level)
+    }
+}
+
+private struct VoiceWaveform: View {
+    var level: Float
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 3) {
+            ForEach(0..<5, id: \.self) { i in
+                Capsule()
+                    .fill(Color.accentColor.opacity(0.85))
+                    .frame(width: 3, height: barHeight(for: i))
+            }
+        }
+        .animation(.easeOut(duration: 0.08), value: level)
+    }
+
+    private func barHeight(for index: Int) -> CGFloat {
+        let offsets: [Float] = [0.35, 0.7, 1.0, 0.7, 0.35]
+        let h = 4 + CGFloat(level * offsets[index]) * 14
+        return max(4, min(18, h))
     }
 }

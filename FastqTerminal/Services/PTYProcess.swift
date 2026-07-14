@@ -1,19 +1,33 @@
 import Foundation
 import Darwin
 
-/// Minimal PTY host. GhosttyKit will replace the *view* later; session process model stays.
+/// Minimal PTY host. Ghostty renders the bytes; this owns the process + fd.
+/// `write` is called from Ghostty IO threads — it only touches the master fd,
+/// which is safe, hence the unchecked Sendable conformance below.
 final class PTYProcess {
     private(set) var masterFD: Int32 = -1
     private(set) var childPID: pid_t = 0
     private var readSource: DispatchSourceRead?
+    private var currentCols: UInt16 = 120
+    private var currentRows: UInt16 = 40
     var onOutput: ((Data) -> Void)?
     var onExit: ((Int32) -> Void)?
 
     var isRunning: Bool { childPID > 0 }
 
-    func start(command: String, arguments: [String], workingDirectory: String, environment: [String: String] = [:]) throws {
+    func start(
+        command: String,
+        arguments: [String],
+        workingDirectory: String,
+        cols: UInt16,
+        rows: UInt16,
+        environment: [String: String] = [:]
+    ) throws {
+        currentCols = max(cols, 20)
+        currentRows = max(rows, 10)
+
         var master: Int32 = -1
-        let pid = fastq_forkpty(&master, 40, 120)
+        let pid = fastq_forkpty(&master, Int32(currentRows), Int32(currentCols))
         if pid < 0 {
             throw PTYError.openFailed(errno)
         }
@@ -24,8 +38,20 @@ final class PTYProcess {
 
             var env = ProcessInfo.processInfo.environment
             for (k, v) in environment { env[k] = v }
-            env["TERM"] = env["TERM"] ?? "xterm-256color"
-            env["COLORTERM"] = env["COLORTERM"] ?? "truecolor"
+            // Interactive TUI agents (Cursor / Claude / Codex / Grok / OpenCode)
+            env["TERM"] = "xterm-256color"
+            env["COLORTERM"] = "truecolor"
+            env["FORCE_COLOR"] = "1"
+            env["LANG"] = env["LANG"] ?? "en_US.UTF-8"
+            env["LC_ALL"] = env["LC_ALL"] ?? env["LANG"] ?? "en_US.UTF-8"
+            // Never export COLUMNS/LINES: ncurses prefers them over the
+            // TIOCGWINSZ ioctl, so a stale value pins TUIs to the birth size
+            // and they ignore later window resizes.
+            env.removeValue(forKey: "COLUMNS")
+            env.removeValue(forKey: "LINES")
+            // Prevent non-interactive / CI modes that break TUIs.
+            env.removeValue(forKey: "CI")
+            env.removeValue(forKey: "GITHUB_ACTIONS")
 
             let envPointers = env.map { strdup("\($0.key)=\($0.value)") } + [nil]
             let argv = ([command] + arguments).map { strdup($0) } + [nil]
@@ -53,7 +79,12 @@ final class PTYProcess {
 
     func resize(cols: UInt16, rows: UInt16) {
         guard masterFD >= 0 else { return }
-        _ = fastq_resize_pty(masterFD, Int32(rows), Int32(cols))
+        let nextCols = max(cols, 1)
+        let nextRows = max(rows, 1)
+        if nextCols == currentCols, nextRows == currentRows { return }
+        currentCols = nextCols
+        currentRows = nextRows
+        _ = fastq_resize_pty(masterFD, Int32(nextRows), Int32(nextCols))
     }
 
     func terminate() {
@@ -103,6 +134,8 @@ final class PTYProcess {
         terminate()
     }
 }
+
+extension PTYProcess: @unchecked Sendable {}
 
 enum PTYError: LocalizedError {
     case openFailed(Int32)

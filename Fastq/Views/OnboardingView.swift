@@ -502,7 +502,7 @@ private struct ToolOnboardingRow: View {
         HStack(spacing: 12) {
             Toggle(isOn: $tool.enabled) {
                 HStack(spacing: 10) {
-                    Image(systemName: tool.kind.systemImage)
+                    AgentBrandIcon(kind: tool.kind, size: 16)
                         .frame(width: 22)
                     VStack(alignment: .leading, spacing: 2) {
                         HStack(spacing: 8) {

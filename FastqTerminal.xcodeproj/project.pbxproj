@@ -14,8 +14,10 @@
 		B10000000000000000000005 /* TerminalIPCServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000005 /* TerminalIPCServer.swift */; };
 		B10000000000000000000006 /* FastqIPC.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000006 /* FastqIPC.swift */; };
 		B10000000000000000000008 /* PTYHelper.c in Sources */ = {isa = PBXBuildFile; fileRef = B2000000000000000000000B /* PTYHelper.c */; };
+		B1000000000000000000000C /* GhosttyTerminalHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000012 /* GhosttyTerminalHost.swift */; };
 		B10000000000000000000007 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000007 /* Assets.xcassets */; };
-		B10000000000000000000009 /* SwiftTerm in Frameworks */ = {isa = PBXBuildFile; productRef = B2000000000000000000000D /* SwiftTerm */; };
+		B1000000000000000000000A /* GhosttyTerminal in Frameworks */ = {isa = PBXBuildFile; productRef = B2000000000000000000000F /* GhosttyTerminal */; };
+		B1000000000000000000000B /* GhosttyTheme in Frameworks */ = {isa = PBXBuildFile; productRef = B20000000000000000000010 /* GhosttyTheme */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -31,6 +33,7 @@
 		B2000000000000000000000A /* FastqTerminal.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = FastqTerminal.entitlements; sourceTree = "<group>"; };
 		B2000000000000000000000B /* PTYHelper.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = PTYHelper.c; sourceTree = "<group>"; };
 		B2000000000000000000000C /* FastqTerminal-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "FastqTerminal-Bridging-Header.h"; sourceTree = "<group>"; };
+		B20000000000000000000012 /* GhosttyTerminalHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyTerminalHost.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -38,7 +41,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				B10000000000000000000009 /* SwiftTerm in Frameworks */,
+				B1000000000000000000000A /* GhosttyTerminal in Frameworks */,
+				B1000000000000000000000B /* GhosttyTheme in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -91,6 +95,7 @@
 			isa = PBXGroup;
 			children = (
 				B20000000000000000000002 /* TerminalRootView.swift */,
+				B20000000000000000000012 /* GhosttyTerminalHost.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -128,7 +133,8 @@
 			);
 			name = FastqTerminal;
 			packageProductDependencies = (
-				B2000000000000000000000D /* SwiftTerm */,
+				B2000000000000000000000F /* GhosttyTerminal */,
+				B20000000000000000000010 /* GhosttyTheme */,
 			);
 			productName = FastqTerminal;
 			productReference = B20000000000000000000009 /* Fastq Terminal.app */;
@@ -154,7 +160,7 @@
 			);
 			mainGroup = B40000000000000000000001;
 			packageReferences = (
-				B2000000000000000000000E /* XCRemoteSwiftPackageReference "SwiftTerm" */,
+				B20000000000000000000011 /* XCRemoteSwiftPackageReference "libghostty-spm" */,
 			);
 			productRefGroup = B40000000000000000000007 /* Products */;
 			projectDirPath = "";
@@ -183,6 +189,7 @@
 			files = (
 				B10000000000000000000001 /* FastqTerminalApp.swift in Sources */,
 				B10000000000000000000002 /* TerminalRootView.swift in Sources */,
+				B1000000000000000000000C /* GhosttyTerminalHost.swift in Sources */,
 				B10000000000000000000003 /* TerminalSession.swift in Sources */,
 				B10000000000000000000004 /* PTYProcess.swift in Sources */,
 				B10000000000000000000005 /* TerminalIPCServer.swift in Sources */,
@@ -294,21 +301,26 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
-		B2000000000000000000000E /* XCRemoteSwiftPackageReference "SwiftTerm" */ = {
+		B20000000000000000000011 /* XCRemoteSwiftPackageReference "libghostty-spm" */ = {
 			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/migueldeicaza/SwiftTerm.git";
+			repositoryURL = "https://github.com/Lakr233/libghostty-spm.git";
 			requirement = {
 				kind = upToNextMajorVersion;
-				minimumVersion = 1.2.0;
+				minimumVersion = 1.2.11;
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		B2000000000000000000000D /* SwiftTerm */ = {
+		B2000000000000000000000F /* GhosttyTerminal */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = B2000000000000000000000E /* XCRemoteSwiftPackageReference "SwiftTerm" */;
-			productName = SwiftTerm;
+			package = B20000000000000000000011 /* XCRemoteSwiftPackageReference "libghostty-spm" */;
+			productName = GhosttyTerminal;
+		};
+		B20000000000000000000010 /* GhosttyTheme */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = B20000000000000000000011 /* XCRemoteSwiftPackageReference "libghostty-spm" */;
+			productName = GhosttyTheme;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

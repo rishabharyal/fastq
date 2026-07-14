@@ -6,3 +6,7 @@ xcuserdata/
 ghostty/
 GhosttyKit.xcframework/
 *.xcframework.tar.gz
+
+# Whisper vendor artifacts (xcframework kept; zip/cache ignored)
+Fastq/Vendor/*.zip
+Fastq/Vendor/build-apple/

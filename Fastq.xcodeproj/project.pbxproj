@@ -31,6 +31,13 @@
 		A10000000000000000000017 /* SettingsWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000019 /* SettingsWindowController.swift */; };
 		A10000000000000000000018 /* HotkeyShortcut.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000001A /* HotkeyShortcut.swift */; };
 		A10000000000000000000019 /* HotkeyRecorderButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000001B /* HotkeyRecorderButton.swift */; };
+		A1000000000000000000001A /* PromptEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000001C /* PromptEditor.swift */; };
+		A1000000000000000000001B /* AgentBrandIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000001D /* AgentBrandIcon.swift */; };
+		A1000000000000000000001C /* FileMentionIndex.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000001E /* FileMentionIndex.swift */; };
+		A1000000000000000000001D /* VoiceDictationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000001F /* VoiceDictationService.swift */; };
+		A1000000000000000000001F /* WhisperCPPTranscriber.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000022 /* WhisperCPPTranscriber.swift */; };
+		A10000000000000000000020 /* whisper.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = A20000000000000000000023 /* whisper.xcframework */; };
+		A10000000000000000000021 /* whisper.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = A20000000000000000000023 /* whisper.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -61,6 +68,12 @@
 		A20000000000000000000019 /* SettingsWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsWindowController.swift; sourceTree = "<group>"; };
 		A2000000000000000000001A /* HotkeyShortcut.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotkeyShortcut.swift; sourceTree = "<group>"; };
 		A2000000000000000000001B /* HotkeyRecorderButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotkeyRecorderButton.swift; sourceTree = "<group>"; };
+		A2000000000000000000001C /* PromptEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PromptEditor.swift; sourceTree = "<group>"; };
+		A2000000000000000000001D /* AgentBrandIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentBrandIcon.swift; sourceTree = "<group>"; };
+		A2000000000000000000001E /* FileMentionIndex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileMentionIndex.swift; sourceTree = "<group>"; };
+		A2000000000000000000001F /* VoiceDictationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceDictationService.swift; sourceTree = "<group>"; };
+		A20000000000000000000022 /* WhisperCPPTranscriber.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperCPPTranscriber.swift; sourceTree = "<group>"; };
+		A20000000000000000000023 /* whisper.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = whisper.xcframework; path = Fastq/Vendor/whisper.xcframework; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -69,6 +82,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A1000000000000000000000B /* Carbon.framework in Frameworks */,
+				A10000000000000000000020 /* whisper.xcframework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -122,6 +136,9 @@
 				A20000000000000000000015 /* LauncherKeyRouter.swift */,
 				A20000000000000000000017 /* FastqTerminalClient.swift */,
 				A20000000000000000000018 /* FolderPicker.swift */,
+				A2000000000000000000001E /* FileMentionIndex.swift */,
+				A2000000000000000000001F /* VoiceDictationService.swift */,
+				A20000000000000000000022 /* WhisperCPPTranscriber.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -144,6 +161,8 @@
 				A20000000000000000000011 /* OnboardingView.swift */,
 				A20000000000000000000013 /* ProjectPickerView.swift */,
 				A2000000000000000000001B /* HotkeyRecorderButton.swift */,
+				A2000000000000000000001C /* PromptEditor.swift */,
+				A2000000000000000000001D /* AgentBrandIcon.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -152,6 +171,7 @@
 			isa = PBXGroup;
 			children = (
 				A2000000000000000000000B /* Carbon.framework */,
+				A20000000000000000000023 /* whisper.xcframework */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -183,6 +203,7 @@
 				A60000000000000000000001 /* Sources */,
 				A30000000000000000000001 /* Frameworks */,
 				A60000000000000000000002 /* Resources */,
+				A60000000000000000000003 /* Embed Frameworks */,
 			);
 			buildRules = (
 			);
@@ -226,6 +247,20 @@
 		};
 /* End PBXProject section */
 
+/* Begin PBXCopyFilesBuildPhase section */
+		A60000000000000000000003 /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+				A10000000000000000000021 /* whisper.xcframework in Embed Frameworks */,
+			);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXResourcesBuildPhase section */
 		A60000000000000000000002 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
@@ -264,6 +299,11 @@
 				A10000000000000000000017 /* SettingsWindowController.swift in Sources */,
 				A10000000000000000000018 /* HotkeyShortcut.swift in Sources */,
 				A10000000000000000000019 /* HotkeyRecorderButton.swift in Sources */,
+				A1000000000000000000001A /* PromptEditor.swift in Sources */,
+				A1000000000000000000001B /* AgentBrandIcon.swift in Sources */,
+				A1000000000000000000001C /* FileMentionIndex.swift in Sources */,
+				A1000000000000000000001D /* VoiceDictationService.swift in Sources */,
+				A1000000000000000000001F /* WhisperCPPTranscriber.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -375,6 +415,7 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
 	};
 	rootObject = A80000000000000000000001 /* Project object */;
 }

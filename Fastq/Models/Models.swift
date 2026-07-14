@@ -174,6 +174,26 @@ enum AgentModelOption: String, CaseIterable, Identifiable, Codable {
         case .o3: return "o3"
         }
     }
+
+    /// Best-effort model id for each CLI's `--model` flag.
+    func cliModelFlag(for tool: AgentToolKind) -> String {
+        switch (self, tool) {
+        case (.auto, _):
+            return "auto"
+        case (.sonnet, .claudeCode), (.sonnet, .cursorCLI):
+            return "sonnet"
+        case (.opus, .claudeCode), (.opus, .cursorCLI):
+            return "opus"
+        case (.gpt4o, .codexCLI), (.gpt4o, .cursorCLI):
+            return "gpt-4o"
+        case (.gpt5, .codexCLI), (.gpt5, .cursorCLI):
+            return "gpt-5"
+        case (.o3, .codexCLI), (.o3, .cursorCLI):
+            return "o3"
+        default:
+            return rawValue
+        }
+    }
 }
 
 struct AgentSession: Identifiable, Hashable {

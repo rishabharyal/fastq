@@ -64,7 +64,11 @@ struct SettingsView: View {
             ForEach($settings.tools) { $tool in
                 VStack(alignment: .leading, spacing: 8) {
                     Toggle(isOn: $tool.enabled) {
-                        Label(tool.displayName, systemImage: tool.kind.systemImage)
+                        Label {
+                            Text(tool.displayName)
+                        } icon: {
+                            AgentBrandIcon(kind: tool.kind, size: 14)
+                        }
                     }
                     TextField("Command path", text: $tool.commandPath)
                         .textFieldStyle(.roundedBorder)

@@ -16,8 +16,10 @@ public enum FastqIPC {
 public enum FastqIPCMessage: Codable, Sendable {
     case createSession(CreateSessionRequest)
     case focusSession(sessionID: UUID)
+    case selectSession(sessionID: UUID)
     case quitSession(sessionID: UUID)
     case sendText(sessionID: UUID, text: String)
+    case cycleSession(delta: Int)
     case listSessions
     case ping
 
@@ -31,7 +33,7 @@ public enum FastqIPCMessage: Codable, Sendable {
     }
 
     private enum MessageType: String, Codable {
-        case createSession, focusSession, quitSession, sendText, listSessions, ping
+        case createSession, focusSession, selectSession, quitSession, sendText, cycleSession, listSessions, ping
         case sessionCreated, sessionList, ok, error
     }
 
@@ -44,12 +46,18 @@ public enum FastqIPCMessage: Codable, Sendable {
         case .focusSession:
             let payload = try container.decode(IDPayload.self, forKey: .payload)
             self = .focusSession(sessionID: payload.sessionID)
+        case .selectSession:
+            let payload = try container.decode(IDPayload.self, forKey: .payload)
+            self = .selectSession(sessionID: payload.sessionID)
         case .quitSession:
             let payload = try container.decode(IDPayload.self, forKey: .payload)
             self = .quitSession(sessionID: payload.sessionID)
         case .sendText:
             let payload = try container.decode(SendTextPayload.self, forKey: .payload)
             self = .sendText(sessionID: payload.sessionID, text: payload.text)
+        case .cycleSession:
+            let payload = try container.decode(CyclePayload.self, forKey: .payload)
+            self = .cycleSession(delta: payload.delta)
         case .listSessions:
             self = .listSessions
         case .ping:
@@ -75,12 +83,18 @@ public enum FastqIPCMessage: Codable, Sendable {
         case .focusSession(let id):
             try container.encode(MessageType.focusSession, forKey: .type)
             try container.encode(IDPayload(sessionID: id), forKey: .payload)
+        case .selectSession(let id):
+            try container.encode(MessageType.selectSession, forKey: .type)
+            try container.encode(IDPayload(sessionID: id), forKey: .payload)
         case .quitSession(let id):
             try container.encode(MessageType.quitSession, forKey: .type)
             try container.encode(IDPayload(sessionID: id), forKey: .payload)
         case .sendText(let id, let text):
             try container.encode(MessageType.sendText, forKey: .type)
             try container.encode(SendTextPayload(sessionID: id, text: text), forKey: .payload)
+        case .cycleSession(let delta):
+            try container.encode(MessageType.cycleSession, forKey: .type)
+            try container.encode(CyclePayload(delta: delta), forKey: .payload)
         case .listSessions:
             try container.encode(MessageType.listSessions, forKey: .type)
         case .ping:
@@ -163,6 +177,10 @@ private struct IDPayload: Codable {
 private struct SendTextPayload: Codable {
     var sessionID: UUID
     var text: String
+}
+
+private struct CyclePayload: Codable {
+    var delta: Int
 }
 
 private struct ErrorPayload: Codable {

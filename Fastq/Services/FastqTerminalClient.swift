@@ -10,6 +10,16 @@ final class FastqTerminalClient {
 
     private let bundleID = "app.fastq.terminal"
 
+    /// True when Fastq Terminal is running and its IPC socket answers.
+    func isTerminalAlive() -> Bool {
+        isTerminalProcessRunning() && isReachable()
+    }
+
+    /// True when the Terminal app process exists (even if the window is hidden).
+    func isTerminalProcessRunning() -> Bool {
+        !NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).isEmpty
+    }
+
     func ensureTerminalRunning() async throws {
         if isReachable() { return }
 
@@ -23,7 +33,9 @@ final class FastqTerminalClient {
         }
 
         let config = NSWorkspace.OpenConfiguration()
-        config.activates = true
+        // Don't force activation here — createSession/focusSession call showMainWindow.
+        // Activating during openApplication + WindowGroup was spawning a second window.
+        config.activates = false
         do {
             _ = try await NSWorkspace.shared.openApplication(at: appURL, configuration: config)
         } catch {
@@ -40,6 +52,7 @@ final class FastqTerminalClient {
         let response = try await send(.createSession(request))
         switch response {
         case .sessionCreated(let info):
+            revealTerminalApp()
             return info
         case .error(let message):
             throw TerminalClientError.server(message)
@@ -51,11 +64,50 @@ final class FastqTerminalClient {
     func focusSession(_ id: UUID) async throws {
         try await ensureTerminalRunning()
         _ = try await send(.focusSession(sessionID: id))
+        revealTerminalApp()
+    }
+
+    /// Bring Fastq Terminal forward (restores a window hidden via the red close button).
+    private func revealTerminalApp() {
+        let apps = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
+        for app in apps {
+            app.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
+        }
+        // Activate can race ahead of IPC showMainWindow — nudge again shortly after.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            for app in NSRunningApplication.runningApplications(withBundleIdentifier: self.bundleID) {
+                app.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
+            }
+        }
+    }
+
+    /// Switch the Terminal tab without activating that app (keeps launcher key).
+    func selectSession(_ id: UUID) async throws {
+        guard isSocketAlive() else { return }
+        _ = try await send(.selectSession(sessionID: id))
+    }
+
+    func cycleSession(delta: Int) async throws {
+        guard isSocketAlive() else { return }
+        _ = try await send(.cycleSession(delta: delta))
     }
 
     func quitSession(_ id: UUID) async throws {
         guard isSocketAlive() else { return }
         _ = try await send(.quitSession(sessionID: id))
+    }
+
+    func listSessions() async throws -> [SessionInfo] {
+        guard isSocketAlive() else { return [] }
+        let response = try await send(.listSessions)
+        switch response {
+        case .sessionList(let list):
+            return list
+        case .error(let message):
+            throw TerminalClientError.server(message)
+        default:
+            throw TerminalClientError.unexpectedResponse
+        }
     }
 
     func sendText(_ id: UUID, text: String) async throws {
@@ -72,10 +124,6 @@ final class FastqTerminalClient {
     private func isReachable() -> Bool {
         guard isSocketAlive() else { return false }
         return (try? sendSyncPing()) == true
-    }
-
-    private func isTerminalProcessRunning() -> Bool {
-        !NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).isEmpty
     }
 
     private func waitForSocket(attempts: Int) async -> Bool {

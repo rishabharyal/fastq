@@ -20,7 +20,8 @@ final class AgentLauncher {
         project: ProjectFolder,
         tool: ToolConfig,
         model: AgentModelOption,
-        attachments: [PromptAttachment]
+        attachments: [PromptAttachment],
+        extraProjectPaths: [String] = []
     ) async throws -> AgentSession {
         let composedPrompt = composePrompt(prompt: prompt, attachments: attachments)
         var session = AgentSession(
@@ -42,8 +43,12 @@ final class AgentLauncher {
                 kind: tool.kind,
                 command: tool.commandPath,
                 prompt: composedPrompt,
-                model: model
+                model: model,
+                projectPath: project.path,
+                extraProjectPaths: extraProjectPaths
             )
+            // Codex boots a cleaner full TUI when the prompt is typed after start.
+            let injectPrompt = tool.kind == .codexCLI
             let info = try await FastqTerminalClient.shared.createSession(
                 CreateSessionRequest(
                     sessionID: session.id,
@@ -51,7 +56,7 @@ final class AgentLauncher {
                     projectName: project.name,
                     projectPath: project.path,
                     command: commandLine,
-                    prompt: composedPrompt,
+                    prompt: injectPrompt ? composedPrompt : "",
                     tool: tool.kind.rawValue
                 )
             )
@@ -69,11 +74,27 @@ final class AgentLauncher {
     func focus(_ session: AgentSession) {
         if session.hostedInFastqTerminal {
             Task {
-                try? await FastqTerminalClient.shared.focusSession(session.id)
+                // Terminal was Cmd+Q'd — drop the stale row instead of pretending it still runs.
+                if !FastqTerminalClient.shared.isTerminalProcessRunning() {
+                    sessions.remove(session.id)
+                    return
+                }
+                do {
+                    try await FastqTerminalClient.shared.focusSession(session.id)
+                } catch {
+                    sessions.remove(session.id)
+                }
             }
             return
         }
         activateTerminalWindow(windowID: session.terminalWindowID, pid: session.processIdentifier)
+    }
+
+    /// Switch Fastq Terminal tab without bringing that app forward (for launcher ↑/↓).
+    func selectTerminalTab(_ sessionID: UUID) {
+        Task {
+            try? await FastqTerminalClient.shared.selectSession(sessionID)
+        }
     }
 
     func quit(_ session: AgentSession) {
@@ -116,17 +137,25 @@ final class AgentLauncher {
         kind: AgentToolKind,
         command: String,
         prompt: String,
-        model: AgentModelOption
+        model: AgentModelOption,
+        projectPath: String,
+        extraProjectPaths: [String]
     ) -> String {
         switch kind {
         case .cursorCLI:
-            return cursorAgentCommand(command: command, prompt: prompt, model: model)
+            return cursorAgentCommand(command: command, prompt: prompt, model: model, projectPath: projectPath)
         case .claudeCode:
             return claudeCommand(command: command, prompt: prompt, model: model)
         case .codexCLI:
-            return codexCommand(command: command, prompt: prompt, model: model)
+            return codexCommand(
+                command: command,
+                prompt: prompt,
+                model: model,
+                projectPath: projectPath,
+                extraProjectPaths: extraProjectPaths
+            )
         case .grokAgent:
-            return grokCommand(command: command, prompt: prompt, model: model)
+            return grokCommand(command: command, prompt: prompt, model: model, projectPath: projectPath)
         case .openCode:
             return openCodeCommand(command: command, prompt: prompt, model: model)
         }
@@ -135,56 +164,82 @@ final class AgentLauncher {
     private func claudeCommand(command: String, prompt: String, model: AgentModelOption) -> String {
         var parts = [shellEscape(resolvedExecutable(command) ?? command)]
         if model != .auto {
-            parts += ["--model", shellEscape(model.rawValue)]
+            parts += ["--model", shellEscape(model.cliModelFlag(for: .claudeCode))]
         }
-        if !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            parts.append(shellEscape(prompt))
-        }
+        appendPromptArgument(to: &parts, prompt: prompt)
         return parts.joined(separator: " ")
     }
 
-    private func codexCommand(command: String, prompt: String, model: AgentModelOption) -> String {
+    private func codexCommand(
+        command: String,
+        prompt: String,
+        model: AgentModelOption,
+        projectPath: String,
+        extraProjectPaths: [String]
+    ) -> String {
+        // Full interactive TUI (Ghostty renders the alt screen natively):
+        // - `--cd` sets the workspace root explicitly
+        // - prompt is injected after boot (see TerminalSession) so the TUI paints first
         var parts = [shellEscape(resolvedExecutable(command) ?? command)]
+        parts += ["--cd", shellEscape(projectPath)]
         if model != .auto {
-            parts += ["--model", shellEscape(model.rawValue)]
+            parts += ["--model", shellEscape(model.cliModelFlag(for: .codexCLI))]
         }
-        if !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            parts.append(shellEscape(prompt))
+        for extra in extraProjectPaths where extra != projectPath {
+            parts += ["--add-dir", shellEscape(extra)]
         }
+        _ = prompt // injected post-launch
         return parts.joined(separator: " ")
     }
 
-    private func cursorAgentCommand(command: String, prompt: String, model: AgentModelOption) -> String {
-        var parts = [shellEscape(resolvedExecutable(command) ?? command)]
+    private func cursorAgentCommand(
+        command: String,
+        prompt: String,
+        model: AgentModelOption,
+        projectPath: String
+    ) -> String {
+        // Prefer cursor-agent binary; never bare `agent` (clashes with Grok).
+        let exe = shellEscape(resolvedExecutable(command) ?? command)
+        var parts = [exe]
+        parts += ["--workspace", shellEscape(projectPath)]
         if model != .auto {
-            parts += ["--model", shellEscape(model.rawValue)]
+            parts += ["--model", shellEscape(model.cliModelFlag(for: .cursorCLI))]
         }
-        if !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            parts.append(shellEscape(prompt))
-        }
+        appendPromptArgument(to: &parts, prompt: prompt)
         return parts.joined(separator: " ")
     }
 
-    private func grokCommand(command: String, prompt: String, model: AgentModelOption) -> String {
+    private func grokCommand(
+        command: String,
+        prompt: String,
+        model: AgentModelOption,
+        projectPath: String
+    ) -> String {
         var parts = [shellEscape(resolvedExecutable(command) ?? command)]
+        parts += ["--cwd", shellEscape(projectPath)]
         if model != .auto {
-            parts += ["--model", shellEscape(model.rawValue)]
+            parts += ["--model", shellEscape(model.cliModelFlag(for: .grokAgent))]
         }
-        if !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            parts.append(shellEscape(prompt))
-        }
+        appendPromptArgument(to: &parts, prompt: prompt)
         return parts.joined(separator: " ")
     }
 
     private func openCodeCommand(command: String, prompt: String, model: AgentModelOption) -> String {
         var parts = [shellEscape(resolvedExecutable(command) ?? command)]
         if model != .auto {
-            parts += ["--model", shellEscape(model.rawValue)]
+            parts += ["--model", shellEscape(model.cliModelFlag(for: .openCode))]
         }
-        if !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            parts += ["--prompt", shellEscape(prompt)]
+        let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty {
+            parts += ["--prompt", shellEscape(trimmed)]
         }
         return parts.joined(separator: " ")
+    }
+
+    private func appendPromptArgument(to parts: inout [String], prompt: String) {
+        let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        parts.append(shellEscape(trimmed))
     }
 
     // MARK: - Focus / quit helpers (legacy Terminal.app sessions)

@@ -94,19 +94,29 @@ final class TerminalIPCServer {
         case .createSession(let request):
             do {
                 let session = try store.create(from: request)
-                NSApp.activate(ignoringOtherApps: true)
+                (NSApp.delegate as? TerminalAppDelegate)?.showMainWindow()
                 return .sessionCreated(session.info)
             } catch {
                 return .error(error.localizedDescription)
             }
         case .focusSession(let id):
             store.focus(id)
+            (NSApp.delegate as? TerminalAppDelegate)?.showMainWindow()
+            return .ok
+        case .selectSession(let id):
+            store.select(id)
             return .ok
         case .quitSession(let id):
             store.quit(id)
+            if store.sessions.isEmpty {
+                (NSApp.delegate as? TerminalAppDelegate)?.hideMainWindow()
+            }
             return .ok
         case .sendText(let id, let text):
             store.sendText(id, text: text)
+            return .ok
+        case .cycleSession(let delta):
+            _ = store.cycle(by: delta)
             return .ok
         case .sessionCreated, .sessionList, .ok, .error:
             return .error("Unexpected client→server payload")
