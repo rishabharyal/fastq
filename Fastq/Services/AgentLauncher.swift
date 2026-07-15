@@ -262,7 +262,7 @@ final class AgentLauncher {
             app.activate()
         } else {
             NSWorkspace.shared.launchApplication("Terminal")
-        }
+        } 
     }
 
     private func closeTerminalWindow(windowID: Int) {

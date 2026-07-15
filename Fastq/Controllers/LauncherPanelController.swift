@@ -123,6 +123,12 @@ final class LauncherPanelController: NSObject, ObservableObject {
                 }
                 return nil
             }
+            if mods == .command, event.charactersIgnoringModifiers == "," {
+                DispatchQueue.main.async {
+                    self?.openSettings()
+                }
+                return nil
+            }
             return event
         }
     }
@@ -138,7 +144,12 @@ final class LauncherPanelController: NSObject, ObservableObject {
         if panel != nil { return }
 
         let panel = KeyablePanel(
-            contentRect: NSRect(x: 0, y: 0, width: 720, height: 480),
+            contentRect: NSRect(
+                x: 0,
+                y: 0,
+                width: LauncherMetrics.panelWidth,
+                height: LauncherMetrics.panelExpandedHeight
+            ),
             styleMask: [.borderless, .fullSizeContentView],
             backing: .buffered,
             defer: false

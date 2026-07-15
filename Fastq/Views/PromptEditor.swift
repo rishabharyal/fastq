@@ -315,6 +315,7 @@ final class PromptNSTextView: NSTextView {
     override func keyDown(with event: NSEvent) {
         let mention = mentionActive?() == true
         let isReturn = event.keyCode == 36 || event.keyCode == 76
+        let mods = event.modifierFlags.intersection([.command, .option, .control, .shift])
 
         if mention {
             if event.keyCode == 125 {
@@ -343,6 +344,15 @@ final class PromptNSTextView: NSTextView {
             }
             return
         }
+
+        // Fallback when the local NSEvent monitor does not consume ↑/↓
+        // (e.g. SwiftUI state timing). Raycast-style: route into Active Windows.
+        if mods.isEmpty, event.keyCode == 125 || event.keyCode == 126 {
+            if LauncherKeyRouter.shared.handleArrowKey?(event.keyCode == 126) == true {
+                return
+            }
+        }
+
         super.keyDown(with: event)
     }
 

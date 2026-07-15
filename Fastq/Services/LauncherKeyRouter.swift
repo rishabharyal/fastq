@@ -18,4 +18,7 @@ final class LauncherKeyRouter {
     var focusPromptNow: (() -> Void)?
     /// Esc while a chip has Tab-focus: returns true when it consumed the key.
     var clearControlFocus: (() -> Bool)?
+    /// ↑/↓ while the prompt is first responder — returns true when consumed
+    /// (Active Windows list / prompt history). Wired from `LauncherView`.
+    var handleArrowKey: ((Bool) -> Bool)?
 }

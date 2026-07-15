@@ -22,6 +22,24 @@ Fastq Terminal is also a full manual terminal: **⌘T** (or the **+** button) op
 | ⌘↑ / ⌘↓ | jump between prompts (shell integration) |
 | ⇧PgUp / ⇧PgDn, ⌘Home / ⌘End | scrollback |
 
+### Launcher shortcuts
+
+| Shortcut | Action |
+| --- | --- |
+| Global hotkey (default ⌘↩) | Toggle launcher |
+| Tab / ⇧Tab | Cycle project → agent → model → attach → prompt |
+| ↑ / ↓ | Prompt history (↑) · Active Windows list (↓, works with text in prompt) |
+| ↩ | Launch agent / send chat / open selected window |
+| ⌫ | Quit selected Active Window (empty prompt or list focus) |
+| Esc | Close layer (chip / mention / picker / panel) |
+| ⌘1 / ⌘2 | Chat / Agent mode |
+| ⌘P | Project picker |
+| ⌘V | Attach files/images from clipboard |
+| ⌘, | Settings |
+| ⌘T | Show Fastq Terminal |
+| ⌘B | Board (coming soon) |
+| @ | File mention popup |
+
 ## Daily use
 
 ```bash
