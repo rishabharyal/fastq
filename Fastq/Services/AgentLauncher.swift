@@ -63,6 +63,7 @@ final class AgentLauncher {
             session.processIdentifier = info.pid
             session.hostedInFastqTerminal = true
             session.status = .running
+            session.activity = .working
             sessions.update(session)
             return session
         } catch {
@@ -141,13 +142,14 @@ final class AgentLauncher {
         projectPath: String,
         extraProjectPaths: [String]
     ) -> String {
+        var parts: [String]
         switch kind {
         case .cursorCLI:
-            return cursorAgentCommand(command: command, prompt: prompt, model: model, projectPath: projectPath)
+            parts = cursorAgentParts(command: command, prompt: prompt, model: model, projectPath: projectPath)
         case .claudeCode:
-            return claudeCommand(command: command, prompt: prompt, model: model)
+            parts = claudeParts(command: command, prompt: prompt, model: model)
         case .codexCLI:
-            return codexCommand(
+            parts = codexParts(
                 command: command,
                 prompt: prompt,
                 model: model,
@@ -155,28 +157,38 @@ final class AgentLauncher {
                 extraProjectPaths: extraProjectPaths
             )
         case .grokAgent:
-            return grokCommand(command: command, prompt: prompt, model: model, projectPath: projectPath)
+            parts = grokParts(command: command, prompt: prompt, model: model, projectPath: projectPath)
         case .openCode:
-            return openCodeCommand(command: command, prompt: prompt, model: model)
+            parts = openCodeParts(command: command, prompt: prompt, model: model)
         }
+
+        // Tool-agnostic activity bridge: adapters may add flags / install hooks.
+        if let augmentation = try? AgentActivityRegistry.prepare(for: kind) {
+            try? augmentation.prepare?()
+            for arg in augmentation.extraArguments {
+                parts.append(shellEscape(arg))
+            }
+        }
+
+        return parts.joined(separator: " ")
     }
 
-    private func claudeCommand(command: String, prompt: String, model: AgentModelOption) -> String {
+    private func claudeParts(command: String, prompt: String, model: AgentModelOption) -> [String] {
         var parts = [shellEscape(resolvedExecutable(command) ?? command)]
         if model != .auto {
             parts += ["--model", shellEscape(model.cliModelFlag(for: .claudeCode))]
         }
         appendPromptArgument(to: &parts, prompt: prompt)
-        return parts.joined(separator: " ")
+        return parts
     }
 
-    private func codexCommand(
+    private func codexParts(
         command: String,
         prompt: String,
         model: AgentModelOption,
         projectPath: String,
         extraProjectPaths: [String]
-    ) -> String {
+    ) -> [String] {
         // Full interactive TUI (Ghostty renders the alt screen natively):
         // - `--cd` sets the workspace root explicitly
         // - prompt is injected after boot (see TerminalSession) so the TUI paints first
@@ -189,15 +201,15 @@ final class AgentLauncher {
             parts += ["--add-dir", shellEscape(extra)]
         }
         _ = prompt // injected post-launch
-        return parts.joined(separator: " ")
+        return parts
     }
 
-    private func cursorAgentCommand(
+    private func cursorAgentParts(
         command: String,
         prompt: String,
         model: AgentModelOption,
         projectPath: String
-    ) -> String {
+    ) -> [String] {
         // Prefer cursor-agent binary; never bare `agent` (clashes with Grok).
         let exe = shellEscape(resolvedExecutable(command) ?? command)
         var parts = [exe]
@@ -206,25 +218,25 @@ final class AgentLauncher {
             parts += ["--model", shellEscape(model.cliModelFlag(for: .cursorCLI))]
         }
         appendPromptArgument(to: &parts, prompt: prompt)
-        return parts.joined(separator: " ")
+        return parts
     }
 
-    private func grokCommand(
+    private func grokParts(
         command: String,
         prompt: String,
         model: AgentModelOption,
         projectPath: String
-    ) -> String {
+    ) -> [String] {
         var parts = [shellEscape(resolvedExecutable(command) ?? command)]
         parts += ["--cwd", shellEscape(projectPath)]
         if model != .auto {
             parts += ["--model", shellEscape(model.cliModelFlag(for: .grokAgent))]
         }
         appendPromptArgument(to: &parts, prompt: prompt)
-        return parts.joined(separator: " ")
+        return parts
     }
 
-    private func openCodeCommand(command: String, prompt: String, model: AgentModelOption) -> String {
+    private func openCodeParts(command: String, prompt: String, model: AgentModelOption) -> [String] {
         var parts = [shellEscape(resolvedExecutable(command) ?? command)]
         if model != .auto {
             parts += ["--model", shellEscape(model.cliModelFlag(for: .openCode))]
@@ -233,7 +245,7 @@ final class AgentLauncher {
         if !trimmed.isEmpty {
             parts += ["--prompt", shellEscape(trimmed)]
         }
-        return parts.joined(separator: " ")
+        return parts
     }
 
     private func appendPromptArgument(to parts: inout [String], prompt: String) {

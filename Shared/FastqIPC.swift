@@ -150,6 +150,8 @@ public struct SessionInfo: Codable, Sendable, Hashable, Identifiable {
     public var tool: String
     public var pid: Int32?
     public var isRunning: Bool
+    /// Agent turn activity (`working` / `waiting` / `done` / `idle`). Optional for older peers.
+    public var activity: String?
 
     public init(
         id: UUID,
@@ -158,7 +160,8 @@ public struct SessionInfo: Codable, Sendable, Hashable, Identifiable {
         projectPath: String,
         tool: String,
         pid: Int32? = nil,
-        isRunning: Bool = true
+        isRunning: Bool = true,
+        activity: String? = nil
     ) {
         self.id = id
         self.title = title
@@ -167,6 +170,170 @@ public struct SessionInfo: Codable, Sendable, Hashable, Identifiable {
         self.tool = tool
         self.pid = pid
         self.isRunning = isRunning
+        self.activity = activity
+    }
+}
+
+/// Fine-grained agent turn state (any AI CLI → OSC / heuristics → IPC).
+public enum AgentActivity: String, Codable, Sendable, Hashable {
+    case idle
+    case working
+    case waiting
+    case done
+
+    /// Canonical OSC / window-title payload: `fastq:working`, `fastq:waiting`, …
+    public static let titlePrefix = "fastq:"
+
+    public static func parseTitle(_ title: String) -> AgentActivity? {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.hasPrefix(titlePrefix) else { return nil }
+        let raw = String(trimmed.dropFirst(titlePrefix.count)).lowercased()
+        // Allow `fastq:working · extra` noise after the token.
+        let token = raw.split(whereSeparator: { $0 == " " || $0 == "·" || $0 == "|" }).first
+            .map(String.init) ?? raw
+        return AgentActivity(rawValue: token)
+    }
+
+    public var launcherLabel: String {
+        switch self {
+        case .idle: return "Running"
+        case .working: return "Working"
+        case .waiting: return "Needs you"
+        case .done: return "Done"
+        }
+    }
+
+    /// Encode as OSC 0 title bytes (for docs / adapters that emit titles).
+    public var oscTitleSequence: String {
+        "\u{001B}]0;\(Self.titlePrefix)\(rawValue)\u{0007}"
+    }
+}
+
+/// Tool-agnostic inference used by Fastq Terminal for every agent tab.
+public enum AgentActivityInterpreter {
+    /// High-confidence “needs human” phrases shared across Claude / Codex / Cursor / etc.
+    private static let waitingPhrases: [String] = [
+        "do you want to proceed",
+        "do you want to",
+        "allow this",
+        "permission required",
+        "permission denied",
+        "waiting for your",
+        "waiting for input",
+        "waiting for confirmation",
+        "needs your approval",
+        "approve this",
+        "press enter to",
+        "yes/no",
+        "(y/n)",
+        "[y/n]",
+        "continue? ",
+        "are you sure"
+    ]
+
+    public static func fromOSCTitle(_ title: String) -> AgentActivity? {
+        AgentActivity.parseTitle(title)
+    }
+
+    /// Inspect a PTY chunk. Returns nil when the chunk should not change state.
+    public static func fromPTYOutput(_ data: Data) -> AgentActivity? {
+        guard !data.isEmpty else { return nil }
+        let text = stripANSI(String(data: data, encoding: .utf8) ?? "")
+            .lowercased()
+        guard text.contains(where: { !$0.isWhitespace }) else { return nil }
+
+        for phrase in waitingPhrases where text.contains(phrase) {
+            return .waiting
+        }
+
+        // Any other visible output ⇒ the agent is actively doing work.
+        return .working
+    }
+
+    private static func stripANSI(_ input: String) -> String {
+        var out = ""
+        out.reserveCapacity(input.count)
+        var i = input.startIndex
+        while i < input.endIndex {
+            let ch = input[i]
+            if ch == "\u{001B}" {
+                let next = input.index(after: i)
+                guard next < input.endIndex else { break }
+                if input[next] == "[" {
+                    // CSI … letter
+                    var j = input.index(after: next)
+                    while j < input.endIndex {
+                        let c = input[j]
+                        j = input.index(after: j)
+                        if (c >= "@" && c <= "~") { break }
+                    }
+                    i = j
+                    continue
+                }
+                if input[next] == "]" {
+                    // OSC … BEL or ST
+                    var j = input.index(after: next)
+                    while j < input.endIndex {
+                        let c = input[j]
+                        if c == "\u{0007}" {
+                            j = input.index(after: j)
+                            break
+                        }
+                        if c == "\u{001B}" {
+                            let k = input.index(after: j)
+                            if k < input.endIndex, input[k] == "\\" {
+                                j = input.index(after: k)
+                                break
+                            }
+                        }
+                        j = input.index(after: j)
+                    }
+                    i = j
+                    continue
+                }
+                i = input.index(after: next)
+                continue
+            }
+            out.append(ch)
+            i = input.index(after: i)
+        }
+        return out
+    }
+}
+
+/// Near-realtime activity mirror: Terminal writes, launcher reads (no IPC round-trip).
+public enum AgentActivityMirror {
+    public static var fileURL: URL {
+        URL(fileURLWithPath: FastqIPC.supportDirectory, isDirectory: true)
+            .appendingPathComponent("activity-state.json")
+    }
+
+    public static func write(sessionID: UUID, activity: AgentActivity) {
+        var map = readAll()
+        map[sessionID.uuidString] = activity.rawValue
+        persist(map)
+    }
+
+    public static func remove(sessionID: UUID) {
+        var map = readAll()
+        map.removeValue(forKey: sessionID.uuidString)
+        persist(map)
+    }
+
+    public static func readAll() -> [String: String] {
+        guard let data = try? Data(contentsOf: fileURL),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: String]
+        else { return [:] }
+        return obj
+    }
+
+    private static func persist(_ map: [String: String]) {
+        try? FileManager.default.createDirectory(
+            atPath: FastqIPC.supportDirectory,
+            withIntermediateDirectories: true
+        )
+        guard let data = try? JSONSerialization.data(withJSONObject: map, options: [.sortedKeys]) else { return }
+        try? data.write(to: fileURL, options: .atomic)
     }
 }
 

@@ -217,6 +217,8 @@ struct AgentSession: Identifiable, Hashable {
     /// When true, focus/quit go through Fastq Terminal IPC instead of AppleScript.
     var hostedInFastqTerminal: Bool = false
     var status: SessionStatus
+    /// Claude (and any AI CLI) turn state from Terminal activity bridge.
+    var activity: AgentActivity = .idle
 
     enum SessionStatus: String, Hashable {
         case launching
@@ -236,5 +238,15 @@ struct AgentSession: Identifiable, Hashable {
     var subtitle: String {
         let host = hostedInFastqTerminal ? "Fastq Terminal" : tool.displayName
         return "\(host) · \(projectName)"
+    }
+
+    /// Label shown in the Active Windows row.
+    var statusDisplayLabel: String {
+        switch status {
+        case .launching: return "Launching"
+        case .exited: return "Exited"
+        case .running:
+            return activity.launcherLabel
+        }
     }
 }

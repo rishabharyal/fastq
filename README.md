@@ -27,7 +27,7 @@ Fastq Terminal is also a full manual terminal: **⌘T** (or the **+** button) op
 | Shortcut | Action |
 | --- | --- |
 | Global hotkey (default ⌘↩) | Toggle launcher |
-| Tab / ⇧Tab | Cycle project → agent → model → attach → prompt |
+| Tab / ⇧Tab | Cycle prompt → project → agent → model → attach → Active Windows |
 | ↑ / ↓ | Prompt history (↑) · Active Windows list (↓, works with text in prompt) |
 | ↩ | Launch agent / send chat / open selected window |
 | ⌫ | Quit selected Active Window (empty prompt or list focus) |

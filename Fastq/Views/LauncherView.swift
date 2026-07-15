@@ -1121,11 +1121,18 @@ struct LauncherView: View {
             attachments.wrappedValue = current
         }
 
-        LauncherKeyRouter.shared.clearControlFocus = { [focusedControl = $focusedControl] in
-            guard focusedControl.wrappedValue != nil else { return false }
-            focusedControl.wrappedValue = nil
-            LauncherKeyRouter.shared.focusPromptNow?()
-            return true
+        LauncherKeyRouter.shared.clearControlFocus = { [focusedControl = $focusedControl, navigating = $isNavigatingTabs] in
+            if focusedControl.wrappedValue != nil {
+                focusedControl.wrappedValue = nil
+                LauncherKeyRouter.shared.focusPromptNow?()
+                return true
+            }
+            if navigating.wrappedValue {
+                navigating.wrappedValue = false
+                LauncherKeyRouter.shared.focusPromptNow?()
+                return true
+            }
+            return false
         }
 
         // Arrow navigation must use Bindings — the NSEvent closure captures a
@@ -1154,7 +1161,7 @@ struct LauncherView: View {
         }
 
         // Keyboard model (Esc itself is owned by LauncherPanelController):
-        //   Tab / ⇧Tab   cycle header controls (project → agent → model → attach)
+        //   Tab / ⇧Tab   cycle prompt → chips → Active Windows → prompt
         //   focused chip: ←→↑↓ change its value, Return/Space activates,
         //                 any printable key falls through to the prompt
         //   ↓            enter / move Active Windows (Raycast-style)
@@ -1299,19 +1306,79 @@ struct LauncherView: View {
 
     // MARK: - Header control focus (Tab cycle)
 
+    /// Tab order: prompt → project → agent → model → attach → Active Windows → prompt.
     private func cycleControlFocus(backwards: Bool) {
-        let all = HeaderControl.allCases
-        guard let current = focusedControl, let index = all.firstIndex(of: current) else {
-            focusedControl = backwards ? all.last : all.first
+        let chips = HeaderControl.allCases
+        let hasSessionList = mode == .agent && !sessions.sessions.isEmpty
+
+        // Already in Active Windows — Tab leaves the list.
+        if isNavigatingTabs {
+            isNavigatingTabs = false
+            if backwards {
+                focusedControl = chips.last
+            } else {
+                focusedControl = nil
+                LauncherKeyRouter.shared.focusPromptNow?()
+            }
             return
         }
-        let next = index + (backwards ? -1 : 1)
-        if all.indices.contains(next) {
-            focusedControl = all[next]
+
+        if backwards {
+            if let current = focusedControl, let index = chips.firstIndex(of: current) {
+                if index > 0 {
+                    focusedControl = chips[index - 1]
+                } else {
+                    // First chip ← → Active Windows (if any) or prompt.
+                    focusedControl = nil
+                    if hasSessionList {
+                        enterSessionListFocus()
+                    } else {
+                        LauncherKeyRouter.shared.focusPromptNow?()
+                    }
+                }
+            } else {
+                // Prompt ← → Active Windows (if any) or last chip.
+                if hasSessionList {
+                    enterSessionListFocus()
+                } else {
+                    focusedControl = chips.last
+                }
+            }
+            return
+        }
+
+        // Forward Tab
+        if let current = focusedControl, let index = chips.firstIndex(of: current) {
+            if index + 1 < chips.count {
+                focusedControl = chips[index + 1]
+            } else {
+                // Last chip → Active Windows (if any) or prompt.
+                focusedControl = nil
+                if hasSessionList {
+                    enterSessionListFocus()
+                } else {
+                    LauncherKeyRouter.shared.focusPromptNow?()
+                }
+            }
         } else {
-            // Walked off either end → focus returns to the prompt.
-            focusedControl = nil
-            LauncherKeyRouter.shared.focusPromptNow?()
+            // Prompt → first chip.
+            focusedControl = chips.first
+            isNavigatingTabs = false
+        }
+    }
+
+    private func enterSessionListFocus() {
+        focusedControl = nil
+        isNavigatingTabs = true
+        let list = sessions.sessions
+        guard !list.isEmpty else { return }
+        if selectedSessionID == nil || !list.contains(where: { $0.id == selectedSessionID }) {
+            selectedSessionID = list.first?.id
+        }
+        if let id = selectedSessionID,
+           let session = list.first(where: { $0.id == id }),
+           session.hostedInFastqTerminal {
+            launcher.selectTerminalTab(id)
         }
     }
 
@@ -1481,10 +1548,6 @@ private struct SessionRow: View {
     let onFocus: () -> Void
     let onQuit: () -> Void
 
-    private var statusLabel: String {
-        session.status == .launching ? "Launching" : "Running"
-    }
-
     var body: some View {
         HStack(spacing: 12) {
             ZStack {
@@ -1505,10 +1568,6 @@ private struct SessionRow: View {
             }
 
             Spacer()
-
-            Text(statusLabel)
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
 
             Button(action: onQuit) {
                 Image(systemName: "xmark")
@@ -1539,7 +1598,7 @@ private struct SessionRow: View {
         .onTapGesture(perform: onSelect)
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(isSelected || isListFocused ? .isSelected : [])
-        .accessibilityLabel("\(session.title), \(session.subtitle), \(statusLabel)")
+        .accessibilityLabel("\(session.title), \(session.subtitle)")
         .accessibilityHint("Return to open, Delete to quit")
     }
 }

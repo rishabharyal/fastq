@@ -159,6 +159,7 @@ final class TerminalSessionStore: ObservableObject {
         guard let index = sessions.firstIndex(where: { $0.id == id }) else { return }
         let path = sessions[index].projectPath
         sessions[index].terminate()
+        AgentActivityMirror.remove(sessionID: id)
         sessions.remove(at: index)
         if selectedSessionID == id {
             let remaining = sessions(in: path)
@@ -282,9 +283,15 @@ final class TerminalSession: Identifiable, ObservableObject {
             projectPath: projectPath,
             tool: tool,
             pid: pty.childPID == 0 ? nil : pty.childPID,
-            isRunning: isRunning
+            isRunning: isRunning,
+            activity: activity.rawValue
         )
     }
+
+    /// Fine-grained agent turn state (any AI CLI via OSC + PTY heuristics).
+    @Published private(set) var activity: AgentActivity = .idle
+    /// Throttle PTY heuristic updates so TUIs don't spam SwiftUI.
+    private var lastActivityInferAt: Date = .distantPast
 
     var toolLabel: String {
         if isFallbackShell { return "Terminal" }
@@ -299,10 +306,18 @@ final class TerminalSession: Identifiable, ObservableObject {
         }
     }
 
+    private var tracksAgentActivity: Bool {
+        !isShell && !isFallbackShell
+    }
+
     /// OSC 0/2 window title from the running program. Shell tabs adopt it as
     /// their sidebar title; agent tabs keep the prompt title and only update
-    /// the status line.
+    /// the status line. Canonical `fastq:<activity>` titles win for all agents.
     func applyTerminalTitle(_ newTitle: String) {
+        if tracksAgentActivity, let parsed = AgentActivityInterpreter.fromOSCTitle(newTitle) {
+            applyActivity(parsed)
+            return
+        }
         // TUIs spam identical titles; don't churn SwiftUI for no-ops.
         if statusLine != newTitle {
             statusLine = newTitle
@@ -310,6 +325,29 @@ final class TerminalSession: Identifiable, ObservableObject {
         if isShell || isFallbackShell, title != newTitle {
             title = newTitle
         }
+    }
+
+    private func applyActivity(_ next: AgentActivity) {
+        let changed = activity != next
+        if changed {
+            activity = next
+        }
+        let label = next.launcherLabel
+        if statusLine != label {
+            statusLine = label
+        }
+        // Always mirror so the launcher picks up the latest state quickly.
+        AgentActivityMirror.write(sessionID: id, activity: next)
+    }
+
+    private func noteAgentOutput(_ data: Data) {
+        guard tracksAgentActivity, isRunning else { return }
+        let now = Date()
+        // ~8 Hz ceiling — enough for status, cheap for TUIs.
+        guard now.timeIntervalSince(lastActivityInferAt) >= 0.12 else { return }
+        guard let inferred = AgentActivityInterpreter.fromPTYOutput(data) else { return }
+        lastActivityInferAt = now
+        applyActivity(inferred)
     }
 
     init(request: CreateSessionRequest) {
@@ -384,6 +422,9 @@ final class TerminalSession: Identifiable, ObservableObject {
         }
         isRunning = true
         statusLine = "\(toolLabel) running"
+        if tracksAgentActivity {
+            applyActivity(.working)
+        }
 
         // Codex (and similar) boot a full TUI first; type the prompt afterward.
         let prompt = initialPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -398,13 +439,19 @@ final class TerminalSession: Identifiable, ObservableObject {
 
     private func wirePTYCallbacks() {
         // Output flows on the PTY read queue straight into the emulator's
-        // parse queue — main only hears about lifecycle changes.
-        pty.onOutput = { [output] data in
+        // parse queue — main only hears about lifecycle + activity inference.
+        pty.onOutput = { [output, weak self] data in
             output.emit(data)
+            DispatchQueue.main.async {
+                self?.noteAgentOutput(data)
+            }
         }
         pty.onExit = { [weak self] _ in
             self?.isRunning = false
             self?.statusLine = "Exited"
+            if self?.tracksAgentActivity == true {
+                self?.applyActivity(.done)
+            }
             self?.onExit?()
         }
     }

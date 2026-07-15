@@ -41,6 +41,8 @@
 		A10000000000000000000030 /* ChatService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000030 /* ChatService.swift */; };
 		A10000000000000000000031 /* ChatModeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000031 /* ChatModeView.swift */; };
 		A10000000000000000000032 /* LauncherMetrics.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000032 /* LauncherMetrics.swift */; };
+		A10000000000000000000033 /* AgentActivityRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000033 /* AgentActivityRegistry.swift */; };
+		A10000000000000000000034 /* ClaudeCodeActivityAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000034 /* ClaudeCodeActivityAdapter.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -94,6 +96,8 @@
 		A20000000000000000000030 /* ChatService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatService.swift; sourceTree = "<group>"; };
 		A20000000000000000000031 /* ChatModeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatModeView.swift; sourceTree = "<group>"; };
 		A20000000000000000000032 /* LauncherMetrics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LauncherMetrics.swift; sourceTree = "<group>"; };
+		A20000000000000000000033 /* AgentActivityRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentActivityRegistry.swift; sourceTree = "<group>"; };
+		A20000000000000000000034 /* ClaudeCodeActivityAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeCodeActivityAdapter.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -160,8 +164,18 @@
 				A2000000000000000000001F /* VoiceDictationService.swift */,
 				A20000000000000000000022 /* WhisperCPPTranscriber.swift */,
 				A20000000000000000000030 /* ChatService.swift */,
+				A4000000000000000000000A /* AgentActivity */,
 			);
 			path = Services;
+			sourceTree = "<group>";
+		};
+		A4000000000000000000000A /* AgentActivity */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000033 /* AgentActivityRegistry.swift */,
+				A20000000000000000000034 /* ClaudeCodeActivityAdapter.swift */,
+			);
+			path = AgentActivity;
 			sourceTree = "<group>";
 		};
 		A40000000000000000000005 /* Controllers */ = {
@@ -315,6 +329,8 @@
 				A10000000000000000000030 /* ChatService.swift in Sources */,
 				A10000000000000000000031 /* ChatModeView.swift in Sources */,
 				A10000000000000000000032 /* LauncherMetrics.swift in Sources */,
+				A10000000000000000000033 /* AgentActivityRegistry.swift in Sources */,
+				A10000000000000000000034 /* ClaudeCodeActivityAdapter.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
