@@ -12,6 +12,11 @@ struct FastqApp: App {
                 appDelegate.panelController.show()
             }
 
+            Button("Boards") {
+                appDelegate.openBoards()
+            }
+            .keyboardShortcut("b", modifiers: .command)
+
             if appDelegate.settings.needsSetup {
                 Button("Continue Setup…") {
                     appDelegate.showOnboarding(force: true)
@@ -39,9 +44,11 @@ struct FastqApp: App {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let settings = AppSettings()
     let sessions = SessionStore()
+    let auth = FastplayAuthStore.shared
     lazy var panelController = LauncherPanelController(settings: settings, sessions: sessions)
     private var onboardingController: OnboardingWindowController?
     private var settingsController: SettingsWindowController?
+    private var boardController: BoardWindowController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -52,7 +59,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panelController.onOpenSettings = { [weak self] in
             self?.openSettings()
         }
+        panelController.onOpenAccountSettings = { [weak self] in
+            self?.openSettings(tab: .account)
+        }
+        panelController.onOpenBoards = { [weak self] in
+            self?.openBoards()
+        }
         panelController.setup()
+
+        Task { await auth.restoreSession() }
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
             self?.presentOnboardingIfNeeded()
@@ -63,14 +78,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         false
     }
 
-    func openSettings() {
+    func openSettings(tab: SettingsView.SettingsTab = .projects) {
         panelController.hide()
         if settingsController == nil {
-            settingsController = SettingsWindowController(settings: settings) { [weak self] in
+            settingsController = SettingsWindowController(settings: settings, auth: auth) { [weak self] in
                 self?.showOnboarding(force: true)
             }
         }
-        settingsController?.show()
+        settingsController?.show(tab: tab)
+    }
+
+    func openBoards() {
+        panelController.hide()
+        if !auth.isLoggedIn {
+            openSettings(tab: .account)
+            return
+        }
+        if boardController == nil {
+            boardController = BoardWindowController(auth: auth)
+        }
+        boardController?.show()
     }
 
     func showOnboarding(force: Bool = false) {
@@ -85,7 +112,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func presentOnboardingIfNeeded() {
-        // Only the welcome flow — never auto-open Settings.
         if settings.needsSetup {
             showOnboarding(force: true)
         }

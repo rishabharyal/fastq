@@ -75,19 +75,126 @@ struct ChatMessage: Identifiable, Equatable {
 // MARK: - Service
 
 /// General-purpose chat backed by the Anthropic / OpenAI APIs, with streaming
-/// responses and image / PDF / text attachments.
+/// responses and image / PDF / text attachments. Sessions persist via
+/// `ChatHistoryStore` and auto-reset after one hour of inactivity.
 @MainActor
 final class ChatService: ObservableObject {
+    static let inactivityInterval: TimeInterval = 60 * 60
+
     @Published private(set) var messages: [ChatMessage] = []
     @Published private(set) var isStreaming = false
+    @Published private(set) var sessionID = UUID()
+    @Published private(set) var sessionCreatedAt = Date()
+    @Published private(set) var sessionUpdatedAt = Date()
 
     private var streamTask: Task<Void, Never>?
+    private weak var historyStore: ChatHistoryStore?
+    private var currentProvider: ChatProvider = .anthropic
+    private var currentModel: String = ChatProvider.anthropic.defaultModel
+    private var inactivityTimer: Timer?
+    private var didBootstrap = false
+    private var terminateObserver: NSObjectProtocol?
+
+    func bind(historyStore: ChatHistoryStore) {
+        self.historyStore = historyStore
+        if terminateObserver == nil {
+            terminateObserver = NotificationCenter.default.addObserver(
+                forName: NSApplication.willTerminateNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor in
+                    self?.persistCurrentSession()
+                }
+            }
+        }
+        guard !didBootstrap else {
+            resetIfInactive()
+            return
+        }
+        didBootstrap = true
+        restoreActiveSessionOrFresh()
+        scheduleInactivityTimer()
+    }
+
+    /// Persist the open thread without clearing it (e.g. app quit).
+    func persistIfNeeded() {
+        persistCurrentSession()
+    }
+
+    /// Restore the last active chat unless it went idle for an hour.
+    func restoreActiveSessionOrFresh() {
+        guard let store = historyStore,
+              let activeID = store.activeSessionID,
+              let document = store.loadSession(activeID) else {
+            startNewChat(persistCurrent: false)
+            return
+        }
+        if Date().timeIntervalSince(document.updatedAt) >= Self.inactivityInterval {
+            store.setActiveSessionID(nil)
+            startNewChat(persistCurrent: false)
+            return
+        }
+        apply(document: document)
+        scheduleInactivityTimer()
+    }
+
+    /// If the current thread has been idle ≥ 1 hour, archive it and start fresh.
+    @discardableResult
+    func resetIfInactive(now: Date = Date()) -> Bool {
+        guard !messages.isEmpty else { return false }
+        guard now.timeIntervalSince(sessionUpdatedAt) >= Self.inactivityInterval else { return false }
+        persistCurrentSession()
+        startNewChat(persistCurrent: false)
+        return true
+    }
+
+    /// ⌘N / Clear — keep the previous thread in history and open a blank chat.
+    func startNewChat(persistCurrent: Bool = true) {
+        if persistCurrent {
+            persistCurrentSession()
+        }
+        stop()
+        messages = []
+        isStreaming = false
+        sessionID = UUID()
+        sessionCreatedAt = Date()
+        sessionUpdatedAt = Date()
+        historyStore?.setActiveSessionID(nil)
+        scheduleInactivityTimer()
+    }
+
+    func openSession(_ id: UUID) {
+        guard let document = historyStore?.loadSession(id) else { return }
+        if !messages.isEmpty, messages.contains(where: { !$0.text.isEmpty }) {
+            persistCurrentSession()
+        }
+        stop()
+        apply(document: document)
+        historyStore?.setActiveSessionID(id)
+        scheduleInactivityTimer()
+    }
+
+    func deleteSession(_ id: UUID) {
+        let wasCurrent = sessionID == id
+        historyStore?.deleteSession(id)
+        if wasCurrent {
+            startNewChat(persistCurrent: false)
+        }
+    }
 
     func send(text: String, attachments: [PromptAttachment], provider: ChatProvider, model: String, apiKey: String) {
         guard !isStreaming else { return }
-        messages.append(ChatMessage(role: .user, text: text, attachments: attachments))
+        resetIfInactive()
+
+        currentProvider = provider
+        currentModel = model
+        let durableAttachments = historyStore?.copyAttachments(attachments, sessionID: sessionID) ?? attachments
+        messages.append(ChatMessage(role: .user, text: text, attachments: durableAttachments))
         let assistantID = UUID()
         messages.append(ChatMessage(id: assistantID, role: .assistant, text: ""))
+        touchActivity()
+        persistCurrentSession()
         isStreaming = true
 
         let history = messages
@@ -137,10 +244,48 @@ final class ChatService: ObservableObject {
         streamTask = nil
     }
 
+    /// Legacy alias — archives then starts a new chat.
     func clear() {
-        stop()
-        messages = []
+        startNewChat(persistCurrent: true)
+    }
+
+    private func apply(document: ChatSessionDocument) {
+        sessionID = document.id
+        sessionCreatedAt = document.createdAt
+        sessionUpdatedAt = document.updatedAt
+        currentProvider = document.provider
+        currentModel = document.model
+        messages = document.messages.map { $0.toChatMessage() }
         isStreaming = false
+    }
+
+    private func touchActivity() {
+        sessionUpdatedAt = Date()
+        scheduleInactivityTimer()
+    }
+
+    private func persistCurrentSession() {
+        guard !messages.isEmpty else { return }
+        historyStore?.saveSession(
+            id: sessionID,
+            messages: messages,
+            provider: currentProvider,
+            model: currentModel,
+            createdAt: sessionCreatedAt,
+            updatedAt: sessionUpdatedAt,
+            makeActive: true
+        )
+    }
+
+    private func scheduleInactivityTimer() {
+        inactivityTimer?.invalidate()
+        let remaining = Self.inactivityInterval - Date().timeIntervalSince(sessionUpdatedAt)
+        let delay = max(1, remaining)
+        inactivityTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
+            Task { @MainActor in
+                self?.resetIfInactive()
+            }
+        }
     }
 
     private func appendDelta(_ delta: String, to id: UUID) {
@@ -162,6 +307,8 @@ final class ChatService: ObservableObject {
         } else if messages[index].text.isEmpty {
             messages[index].text = "(no response)"
         }
+        touchActivity()
+        persistCurrentSession()
     }
 
     // MARK: - Request building
@@ -204,14 +351,10 @@ final class ChatService: ObservableObject {
 
         let body: [String: Any] = [
             "model": model,
-            // Streaming responses; large cap so long answers aren't truncated
-            // (Haiku 4.5's ceiling is 64K — the minimum across offered models).
             "max_tokens": 64_000,
             "stream": true,
+            "system": Self.mathAwareSystemPrompt,
             "messages": apiMessages,
-            // `thinking` deliberately omitted: it's the one config valid across
-            // every offered model (adaptive 400s on Haiku 4.5), and keeps the
-            // launcher chat snappy.
         ]
 
         var request = URLRequest(url: URL(string: "https://api.anthropic.com/v1/messages")!)
@@ -248,7 +391,9 @@ final class ChatService: ObservableObject {
     }
 
     private static func openAIRequest(history: [ChatMessage], model: String, apiKey: String) throws -> URLRequest {
-        var apiMessages: [[String: Any]] = []
+        var apiMessages: [[String: Any]] = [
+            ["role": "system", "content": Self.mathAwareSystemPrompt]
+        ]
         for message in history where !(message.role == .assistant && message.text.isEmpty) {
             switch message.role {
             case .assistant:
@@ -303,6 +448,20 @@ final class ChatService: ObservableObject {
         }
         return nil
     }
+
+    private static let mathAwareSystemPrompt = """
+    You are a helpful assistant in the Fastq launcher.
+    Structure replies for readability:
+    - Use Markdown with blank lines between paragraphs and sections
+    - Use ## / ### headings for distinct topics
+    - Use bullet lists for pros/cons and steps
+    For any mathematics, physics, or symbolic content, write LaTeX that KaTeX can render:
+    - Display equations on their own lines wrapped in $$ ... $$ (preferred) or \\[ ... \\]
+    - Inline math in $ ... $ or \\( ... \\)
+    - Prefer clear step-by-step solutions for math questions
+    - Use fenced code blocks with a language tag for code
+    Do not wrap LaTeX in markdown code fences unless the user asked for the raw TeX source.
+    """
 
     private static func imageMediaType(for url: URL) -> String? {
         switch url.pathExtension.lowercased() {

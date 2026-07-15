@@ -94,14 +94,16 @@ final class TerminalIPCServer {
         case .createSession(let request):
             do {
                 let session = try store.create(from: request)
-                (NSApp.delegate as? TerminalAppDelegate)?.showMainWindow()
+                // Mount Ghostty hosts for the PTY, but keep the window hidden —
+                // the launcher preview is the interactive surface.
+                (NSApp.delegate as? TerminalAppDelegate)?.ensureMainWindowMounted()
                 return .sessionCreated(session.info)
             } catch {
                 return .error(error.localizedDescription)
             }
         case .focusSession(let id):
             store.focus(id)
-            (NSApp.delegate as? TerminalAppDelegate)?.showMainWindow()
+            // Don't steal focus from the launcher — select only.
             return .ok
         case .selectSession(let id):
             store.select(id)
@@ -115,10 +117,25 @@ final class TerminalIPCServer {
         case .sendText(let id, let text):
             store.sendText(id, text: text)
             return .ok
+        case .sendInput(let id, let data):
+            store.sendInput(id, data: data)
+            return .ok
         case .cycleSession(let delta):
             _ = store.cycle(by: delta)
             return .ok
-        case .sessionCreated, .sessionList, .ok, .error:
+        case .mirrorAttach(let id):
+            guard let info = store.mirrorAttach(id) else {
+                return .error("Session not found")
+            }
+            return .mirrorAttached(info)
+        case .mirrorPoll(let id, let cursor):
+            guard let chunk = store.mirrorChunk(id, since: cursor) else {
+                return .error("Session not found")
+            }
+            return .mirrorChunk(chunk)
+        case .mirrorDetach:
+            return .ok
+        case .sessionCreated, .sessionList, .mirrorAttached, .mirrorChunk, .ok, .error:
             return .error("Unexpected client→server payload")
         }
     }

@@ -1,11 +1,38 @@
 import Foundation
 
 /// What the launcher does with a submitted prompt.
-enum LauncherMode: String, Codable {
+enum LauncherMode: String, Codable, CaseIterable {
     /// General LLM chat (Anthropic / OpenAI APIs) with attachments.
     case chat
     /// Launch a coding agent in Fastq Terminal (the original behavior).
     case agent
+    /// Compose a Fastplay board task (workspace / project / column).
+    case board
+
+    var systemImage: String {
+        switch self {
+        case .chat: return "bubble.left.and.bubble.right.fill"
+        case .agent: return "desktopcomputer"
+        case .board: return "checklist"
+        }
+    }
+
+    var accessibilityLabel: String {
+        switch self {
+        case .chat: return "Chat mode"
+        case .agent: return "Agent mode"
+        case .board: return "Projects mode"
+        }
+    }
+
+    /// Click-to-cycle order: Chat → Agent → Projects → Chat.
+    var next: LauncherMode {
+        switch self {
+        case .chat: return .agent
+        case .agent: return .board
+        case .board: return .chat
+        }
+    }
 }
 
 enum AgentToolKind: String, Codable, CaseIterable, Identifiable {
@@ -14,8 +41,14 @@ enum AgentToolKind: String, Codable, CaseIterable, Identifiable {
     case codexCLI
     case grokAgent
     case openCode
+    case shell
 
     var id: String { rawValue }
+
+    /// Coding agents shown in the launcher tool picker (excludes plain shell).
+    static var agentCases: [AgentToolKind] {
+        allCases.filter { $0 != .shell }
+    }
 
     var displayName: String {
         switch self {
@@ -24,6 +57,7 @@ enum AgentToolKind: String, Codable, CaseIterable, Identifiable {
         case .codexCLI: return "Codex CLI"
         case .grokAgent: return "Grok Agent"
         case .openCode: return "OpenCode"
+        case .shell: return "Terminal"
         }
     }
 
@@ -34,6 +68,7 @@ enum AgentToolKind: String, Codable, CaseIterable, Identifiable {
         case .codexCLI: return "Codex"
         case .grokAgent: return "Grok"
         case .openCode: return "OpenCode"
+        case .shell: return "Shell"
         }
     }
 
@@ -44,6 +79,7 @@ enum AgentToolKind: String, Codable, CaseIterable, Identifiable {
         case .codexCLI: return "terminal"
         case .grokAgent: return "bolt.fill"
         case .openCode: return "rectangle.and.terminal"
+        case .shell: return "terminal.fill"
         }
     }
 
@@ -56,6 +92,7 @@ enum AgentToolKind: String, Codable, CaseIterable, Identifiable {
         case .codexCLI: return "codex"
         case .grokAgent: return "\(home)/.grok/bin/agent"
         case .openCode: return "\(home)/.opencode/bin/opencode"
+        case .shell: return "/bin/zsh"
         }
     }
 
@@ -97,10 +134,12 @@ enum AgentToolKind: String, Codable, CaseIterable, Identifiable {
                 "/opt/homebrew/bin/opencode",
                 "/usr/local/bin/opencode"
             ]
+        case .shell:
+            return ["/bin/zsh", "/bin/bash"]
         }
     }
 
-    /// All supported tools launch as CLI agents inside Fastq Terminal.
+    /// Coding agents launch in Fastq Terminal; shell is the plain PTY tab.
     var launchesInTerminal: Bool { true }
 
     var hostAppName: String { "Fastq Terminal" }
@@ -147,7 +186,7 @@ struct ToolConfig: Identifiable, Codable, Hashable {
     }
 }
 
-struct PromptAttachment: Identifiable, Hashable {
+struct PromptAttachment: Identifiable, Hashable, Codable {
     var id: UUID
     var name: String
     var path: String
@@ -159,6 +198,14 @@ struct PromptAttachment: Identifiable, Hashable {
         self.path = url.path
         let ext = url.pathExtension.lowercased()
         self.isImage = ["png", "jpg", "jpeg", "gif", "webp", "heic", "tiff"].contains(ext)
+    }
+
+    /// Restore a previously persisted attachment (durable Application Support path).
+    init(id: UUID, name: String, path: String, isImage: Bool) {
+        self.id = id
+        self.name = name
+        self.path = path
+        self.isImage = isImage
     }
 }
 
@@ -214,8 +261,6 @@ struct AgentSession: Identifiable, Hashable {
     var startedAt: Date
     var processIdentifier: pid_t?
     var terminalWindowID: Int?
-    /// When true, focus/quit go through Fastq Terminal IPC instead of AppleScript.
-    var hostedInFastqTerminal: Bool = false
     var status: SessionStatus
 
     enum SessionStatus: String, Hashable {
@@ -234,7 +279,9 @@ struct AgentSession: Identifiable, Hashable {
     }
 
     var subtitle: String {
-        let host = hostedInFastqTerminal ? "Fastq Terminal" : tool.displayName
-        return "\(host) · \(projectName)"
+        if tool == .shell {
+            return "Terminal · \(projectName)"
+        }
+        return "\(tool.displayName) · \(projectName)"
     }
 }

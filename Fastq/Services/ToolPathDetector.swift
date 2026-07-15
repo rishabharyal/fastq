@@ -6,7 +6,7 @@ enum ToolPathDetector {
     }
 
     static func detectAll() -> [DetectedToolPath] {
-        AgentToolKind.allCases.map(detect)
+        AgentToolKind.agentCases.map(detect)
     }
 
     static func resolve(_ kind: AgentToolKind) -> String? {

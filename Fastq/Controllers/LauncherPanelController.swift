@@ -13,6 +13,8 @@ final class LauncherPanelController: NSObject, ObservableObject {
     private lazy var launcher = AgentLauncher(settings: settings, sessions: sessions)
     var onOpenOnboarding: (() -> Void)?
     var onOpenSettings: (() -> Void)?
+    var onOpenAccountSettings: (() -> Void)?
+    var onOpenBoards: (() -> Void)?
 
     init(settings: AppSettings, sessions: SessionStore) {
         self.settings = settings
@@ -71,7 +73,8 @@ final class LauncherPanelController: NSObject, ObservableObject {
         onOpenSettings?()
     }
 
-    /// Esc: pop UI layers in order — control focus, mention popup, picker, panel.
+    /// Esc: pop UI layers in order — control focus, mention popup, picker,
+    /// session preview, panel.
     func handleEscape() {
         if LauncherKeyRouter.shared.clearControlFocus?() == true {
             return
@@ -82,6 +85,10 @@ final class LauncherPanelController: NSObject, ObservableObject {
         }
         if LauncherKeyRouter.shared.isProjectPickerOpen {
             LauncherKeyRouter.shared.closePicker?()
+            return
+        }
+        if LauncherKeyRouter.shared.isSessionPreviewOpen {
+            LauncherKeyRouter.shared.closeSessionPreview?()
             return
         }
         hide()
@@ -98,12 +105,9 @@ final class LauncherPanelController: NSObject, ObservableObject {
         }
     }
 
-    /// ⌘T: hand off to the terminal app itself (opens it if needed).
+    /// ⌘T: open a shell in the launcher terminal preview (not Fastq Terminal.app).
     func openTerminal() {
-        hide()
-        Task {
-            try? await FastqTerminalClient.shared.showTerminal()
-        }
+        NotificationCenter.default.post(name: .fastqOpenShellPreview, object: nil)
     }
 
     private func installEscapeMonitor() {
@@ -118,6 +122,10 @@ final class LauncherPanelController: NSObject, ObservableObject {
             }
             let mods = event.modifierFlags.intersection([.command, .option, .control, .shift])
             if mods == .command, event.charactersIgnoringModifiers == "t" {
+                // Inside an open terminal preview — swallow, don't spawn another.
+                if LauncherKeyRouter.shared.isSessionPreviewOpen {
+                    return nil
+                }
                 DispatchQueue.main.async {
                     self?.openTerminal()
                 }
@@ -162,9 +170,12 @@ final class LauncherPanelController: NSObject, ObservableObject {
         let root = LauncherView(
             settings: settings,
             sessions: sessions,
+            auth: FastplayAuthStore.shared,
             launcher: launcher,
             onDismiss: { [weak self] in self?.hide() },
-            onOpenSettings: { [weak self] in self?.openSettings() },
+            onOpenSettings: { [weak self] in self?.onOpenSettings?() },
+            onOpenAccountSettings: { [weak self] in self?.onOpenAccountSettings?() },
+            onOpenBoards: { [weak self] in self?.onOpenBoards?() },
             onOpenOnboarding: onOpenOnboarding,
             onOpenTerminal: { [weak self] in self?.openTerminal() }
         )
@@ -194,10 +205,12 @@ final class LauncherPanelController: NSObject, ObservableObject {
         guard let panel else { return }
         let current = panel.frame
         guard abs(current.height - size.height) > 1 || abs(current.width - size.width) > 1 else { return }
-        let top = current.origin.y + current.height
+        // Always re-center on the active screen so growth blooms on all sides.
+        let screen = panel.screen ?? NSScreen.main
+        let visible = screen?.visibleFrame ?? current
         let frame = NSRect(
-            x: current.origin.x,
-            y: top - size.height,
+            x: visible.midX - size.width / 2,
+            y: visible.midY - size.height / 2,
             width: size.width,
             height: size.height
         )
@@ -209,7 +222,7 @@ final class LauncherPanelController: NSObject, ObservableObject {
         let visible = screen.visibleFrame
         let size = panel.frame.size
         let x = visible.midX - size.width / 2
-        let y = visible.midY - size.height / 2 + 60
+        let y = visible.midY - size.height / 2
         panel.setFrameOrigin(NSPoint(x: x, y: y))
     }
 }

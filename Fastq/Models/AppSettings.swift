@@ -125,7 +125,7 @@ final class AppSettings: ObservableObject {
                     ?? tools.first(where: { $0.kind == .claudeCode })?.id
             }
         } else {
-            let defaultTools = AgentToolKind.allCases.map { ToolConfig(kind: $0) }
+            let defaultTools = AgentToolKind.agentCases.map { ToolConfig(kind: $0) }
             projects = []
             tools = defaultTools
             defaultToolID = defaultTools.first(where: { $0.kind == .claudeCode })?.id
@@ -230,7 +230,7 @@ final class AppSettings: ObservableObject {
         for tool in existing {
             byKind[tool.kind] = tool
         }
-        return AgentToolKind.allCases.map { kind in
+        return AgentToolKind.agentCases.map { kind in
             if var existing = byKind[kind] {
                 // Migrate old Cursor CLI default that pointed at the GUI binary.
                 if kind == .cursorCLI,

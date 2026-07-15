@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="katex.min.css" />
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: transparent;
+      color: #EBEBEB;
+      overflow: hidden;
+      font: 13.5px/1.55 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    #out {
+      padding: 0;
+      word-wrap: break-word;
+      overflow-wrap: anywhere;
+    }
+    #out.error-tone { color: #ff8a80; }
+    #out h1, #out h2, #out h3, #out h4 {
+      margin: 0.85em 0 0.35em;
+      font-weight: 650;
+      line-height: 1.25;
+      color: #f2f2f2;
+    }
+    #out h1 { font-size: 1.35em; }
+    #out h2 { font-size: 1.2em; }
+    #out h3 { font-size: 1.08em; }
+    #out p { margin: 0.55em 0; }
+    #out p:first-child { margin-top: 0; }
+    #out p:last-child { margin-bottom: 0; }
+    #out ul, #out ol {
+      margin: 0.45em 0;
+      padding-left: 1.35em;
+    }
+    #out li { margin: 0.2em 0; }
+    #out code {
+      font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+      background: rgba(255,255,255,0.08);
+      padding: 0.1em 0.35em;
+      border-radius: 4px;
+    }
+    #out pre {
+      margin: 0.6em 0;
+      padding: 0.7em 0.8em;
+      background: rgba(0,0,0,0.28);
+      border-radius: 8px;
+      overflow-x: auto;
+    }
+    #out pre code {
+      background: none;
+      padding: 0;
+      font-size: 12.5px;
+    }
+    #out blockquote {
+      margin: 0.55em 0;
+      padding: 0.15em 0 0.15em 0.85em;
+      border-left: 3px solid rgba(255,255,255,0.22);
+      color: rgba(235,235,235,0.72);
+    }
+    #out a { color: #7eb6ff; }
+    #out .katex { font-size: 1.05em; }
+    #out .katex-display {
+      margin: 0.75em 0;
+      overflow-x: auto;
+      overflow-y: hidden;
+      padding: 0.35em 0.2em;
+    }
+    #out hr {
+      border: none;
+      border-top: 1px solid rgba(255,255,255,0.12);
+      margin: 0.9em 0;
+    }
+  </style>
+  <script src="katex.min.js"></script>
+</head>
+<body>
+  <div id="out"></div>
+  <script>
+    function postHeight() {
+      try {
+        const h = Math.ceil(document.documentElement.scrollHeight || document.body.scrollHeight || 24);
+        window.webkit.messageHandlers.height.postMessage(h);
+      } catch (_) {}
+    }
+
+    function decodeBase64(b64) {
+      const binary = atob(b64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      return new TextDecoder("utf-8").decode(bytes);
+    }
+
+    function escapeHtml(s) {
+      return s
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    // Pull math out before markdown so `$θ$` stays inline in the sentence.
+    function extractMath(md) {
+      const slots = [];
+      function stash(tex, display) {
+        const id = slots.length;
+        slots.push({ tex: tex.trim(), display: !!display });
+        return "%%MATH" + id + "%%";
+      }
+
+      let s = md;
+      s = s.replace(/\$\$([\s\S]+?)\$\$/g, function (_, tex) { return stash(tex, true); });
+      s = s.replace(/\\\[([\s\S]+?)\\\]/g, function (_, tex) { return stash(tex, true); });
+      s = s.replace(/\\\(([\s\S]+?)\\\)/g, function (_, tex) { return stash(tex, false); });
+      // Inline $...$ — skip $$ and currency like $5
+      s = s.replace(/(^|[^\\$])\$([^\$\n]+?)\$(?!\$)/g, function (_, pre, tex) {
+        if (/^\d/.test(tex)) return pre + "$" + tex + "$";
+        return pre + stash(tex, false);
+      });
+      return { text: s, slots: slots };
+    }
+
+    function inlineFormat(text) {
+      let s = escapeHtml(text);
+      s = s.replace(/`([^`]+?)`/g, "<code>$1</code>");
+      s = s.replace(/\*\*([^*]+?)\*\*/g, "<strong>$1</strong>");
+      s = s.replace(/__([^_]+?)__/g, "<strong>$1</strong>");
+      s = s.replace(/(^|[^\*])\*([^*]+?)\*(?!\*)/g, "$1<em>$2</em>");
+      s = s.replace(/(^|[^_])_([^_]+?)_(?!_)/g, "$1<em>$2</em>");
+      s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
+      return s;
+    }
+
+    function markdownToHtml(md) {
+      const lines = md.replace(/\r\n/g, "\n").split("\n");
+      const html = [];
+      let i = 0;
+      let para = [];
+
+      function flushPara() {
+        if (!para.length) return;
+        html.push("<p>" + inlineFormat(para.join(" ")) + "</p>");
+        para = [];
+      }
+
+      while (i < lines.length) {
+        const raw = lines[i];
+        const line = raw.trimEnd();
+        const trimmed = line.trim();
+
+        if (!trimmed) {
+          flushPara();
+          i++;
+          continue;
+        }
+
+        if (/^---+$/.test(trimmed) || /^\*\*\*+$/.test(trimmed)) {
+          flushPara();
+          html.push("<hr/>");
+          i++;
+          continue;
+        }
+
+        const heading = /^(#{1,4})\s+(.+)$/.exec(trimmed);
+        if (heading) {
+          flushPara();
+          const level = heading[1].length;
+          html.push("<h" + level + ">" + inlineFormat(heading[2]) + "</h" + level + ">");
+          i++;
+          continue;
+        }
+
+        if (/^>\s?/.test(trimmed)) {
+          flushPara();
+          const quote = [];
+          while (i < lines.length && /^>\s?/.test(lines[i].trim())) {
+            quote.push(lines[i].trim().replace(/^>\s?/, ""));
+            i++;
+          }
+          html.push("<blockquote><p>" + inlineFormat(quote.join(" ")) + "</p></blockquote>");
+          continue;
+        }
+
+        if (/^[-*+]\s+/.test(trimmed)) {
+          flushPara();
+          html.push("<ul>");
+          while (i < lines.length && /^[-*+]\s+/.test(lines[i].trim())) {
+            html.push("<li>" + inlineFormat(lines[i].trim().replace(/^[-*+]\s+/, "")) + "</li>");
+            i++;
+          }
+          html.push("</ul>");
+          continue;
+        }
+
+        if (/^\d+\.\s+/.test(trimmed)) {
+          flushPara();
+          html.push("<ol>");
+          while (i < lines.length && /^\d+\.\s+/.test(lines[i].trim())) {
+            html.push("<li>" + inlineFormat(lines[i].trim().replace(/^\d+\.\s+/, "")) + "</li>");
+            i++;
+          }
+          html.push("</ol>");
+          continue;
+        }
+
+        para.push(trimmed);
+        i++;
+      }
+      flushPara();
+      return html.join("");
+    }
+
+    function injectMath(html, slots) {
+      return html.replace(/%%MATH(\d+)%%/g, function (_, idStr) {
+        const id = parseInt(idStr, 10);
+        const slot = slots[id];
+        if (!slot) return "";
+        const cls = slot.display ? "math math-display" : "math math-inline";
+        return '<span class="' + cls + '" data-math-id="' + id + '"></span>';
+      });
+    }
+
+    function renderKatex(root, slots) {
+      root.querySelectorAll(".math").forEach(function (el) {
+        const id = parseInt(el.getAttribute("data-math-id"), 10);
+        const slot = slots[id];
+        if (!slot) return;
+        try {
+          katex.render(slot.tex, el, {
+            throwOnError: false,
+            displayMode: !!slot.display,
+            strict: "ignore",
+            trust: false,
+            macros: {
+              "\\R": "\\mathbb{R}",
+              "\\N": "\\mathbb{N}",
+              "\\Z": "\\mathbb{Z}",
+              "\\Q": "\\mathbb{Q}",
+              "\\C": "\\mathbb{C}"
+            }
+          });
+        } catch (err) {
+          el.textContent = slot.tex;
+          el.style.color = "#ff7b72";
+          el.style.fontFamily = "ui-monospace, Menlo, monospace";
+          el.style.fontSize = "12px";
+        }
+      });
+    }
+
+    // Full prose renderer: markdown + inline/display KaTeX in one flow.
+    window.renderProse = function (b64, isError) {
+      const out = document.getElementById("out");
+      out.className = isError ? "error-tone" : "";
+      const md = decodeBase64(b64);
+      const extracted = extractMath(md);
+      let html = markdownToHtml(extracted.text);
+      html = injectMath(html, extracted.slots);
+      out.innerHTML = html || "<p></p>";
+      renderKatex(out, extracted.slots);
+      requestAnimationFrame(postHeight);
+      setTimeout(postHeight, 40);
+      setTimeout(postHeight, 120);
+    };
+
+    // Legacy single-equation API (kept for safety).
+    window.render = function (b64, display) {
+      const out = document.getElementById("out");
+      const tex = decodeBase64(b64);
+      try {
+        katex.render(tex, out, {
+          throwOnError: false,
+          displayMode: !!display,
+          strict: "ignore",
+          trust: false
+        });
+      } catch (err) {
+        out.textContent = (err && err.message) ? err.message : String(err);
+      }
+      requestAnimationFrame(postHeight);
+      setTimeout(postHeight, 30);
+    };
+
+    window.webkit.messageHandlers.height.postMessage(1);
+  </script>
+</body>
+</html>

@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    html, body, #container {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #121214;
+    }
+  </style>
+</head>
+<body>
+  <div id="container"></div>
+  <script src="vs/loader.js"></script>
+  <script>
+    (function () {
+      const baseUrl = (function () {
+        const href = window.location.href;
+        return href.substring(0, href.lastIndexOf("/") + 1);
+      })();
+
+      window.MonacoEnvironment = {
+        getWorkerUrl: function () {
+          const workerMain = baseUrl + "vs/base/worker/workerMain.js";
+          const body =
+            "self.MonacoEnvironment = { baseUrl: '" + baseUrl + "' };" +
+            "importScripts('" + workerMain + "');";
+          return URL.createObjectURL(new Blob([body], { type: "text/javascript" }));
+        }
+      };
+
+      require.config({ paths: { vs: "vs" } });
+
+      let editor = null;
+      let applyingExternal = false;
+      let ready = false;
+      let fontSize = 13;
+
+      function post(type, payload) {
+        try {
+          window.webkit.messageHandlers.fastq.postMessage(
+            Object.assign({ type: type }, payload || {})
+          );
+        } catch (_) {}
+      }
+
+      function postCursor() {
+        if (!editor) return;
+        const pos = editor.getPosition();
+        if (!pos) return;
+        const sel = editor.getSelection();
+        const selected = sel && !sel.isEmpty()
+          ? editor.getModel().getValueInRange(sel).length
+          : 0;
+        post("cursor", {
+          line: pos.lineNumber,
+          column: pos.column,
+          selected: selected
+        });
+      }
+
+      require(["vs/editor/editor.main"], function () {
+        monaco.editor.defineTheme("fastq-dark", {
+          base: "vs-dark",
+          inherit: true,
+          rules: [],
+          colors: {
+            "editor.background": "#121214",
+            "editor.foreground": "#EBEBEB",
+            "editorCursor.foreground": "#73B3FF",
+            "editor.selectionBackground": "#2C3A4E",
+            "editor.lineHighlightBackground": "#1A1A1E",
+            "editorLineNumber.foreground": "#5F6672",
+            "editorLineNumber.activeForeground": "#A0A6B0",
+            "editorIndentGuide.background": "#2A2A2E",
+            "editorIndentGuide.activeBackground": "#3A3A40",
+            "editorWidget.background": "#1C1C20",
+            "editorSuggestWidget.background": "#1C1C20",
+            "dropdown.background": "#1C1C20"
+          }
+        });
+
+        editor = monaco.editor.create(document.getElementById("container"), {
+          value: "",
+          language: "plaintext",
+          theme: "fastq-dark",
+          automaticLayout: true,
+          fontSize: fontSize,
+          fontFamily: "SF Mono, Menlo, Monaco, monospace",
+          fontLigatures: true,
+          minimap: { enabled: true, scale: 1, showSlider: "mouseover" },
+          scrollBeyondLastLine: false,
+          renderLineHighlight: "all",
+          smoothScrolling: true,
+          cursorBlinking: "smooth",
+          cursorSmoothCaretAnimation: "on",
+          padding: { top: 10, bottom: 10 },
+          tabSize: 2,
+          insertSpaces: true,
+          wordWrap: "off",
+          bracketPairColorization: { enabled: true },
+          guides: { bracketPairs: true, indentation: true },
+          stickyScroll: { enabled: true },
+          folding: true,
+          renderWhitespace: "selection",
+          quickSuggestions: true,
+          suggestOnTriggerCharacters: true,
+          acceptSuggestionOnEnter: "on",
+          multiCursorModifier: "alt",
+          links: true,
+          colorDecorators: true,
+          formatOnPaste: false,
+          formatOnType: false
+        });
+
+        editor.onDidChangeModelContent(function () {
+          if (applyingExternal) return;
+          post("change", { text: editor.getValue() });
+        });
+        editor.onDidChangeCursorPosition(postCursor);
+        editor.onDidChangeCursorSelection(postCursor);
+
+        // Hand off IDE-level chords to the native shell.
+        editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, function () {
+          post("save", {});
+        });
+        editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyP, function () {
+          post("quickOpen", {});
+        });
+        editor.addCommand(
+          monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyP,
+          function () {
+            editor.trigger("fastq", "editor.action.quickCommand", null);
+          }
+        );
+        editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyW, function () {
+          post("closeTab", {});
+        });
+        editor.addCommand(
+          monaco.KeyMod.CtrlCmd | monaco.KeyMod.Alt | monaco.KeyCode.LeftArrow,
+          function () { post("prevTab", {}); }
+        );
+        editor.addCommand(
+          monaco.KeyMod.CtrlCmd | monaco.KeyMod.Alt | monaco.KeyCode.RightArrow,
+          function () { post("nextTab", {}); }
+        );
+        editor.addCommand(
+          monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyS,
+          function () { post("saveAll", {}); }
+        );
+
+        ready = true;
+        post("ready", {});
+        postCursor();
+      });
+
+      window.fastqEditor = {
+        setContent: function (text, language) {
+          if (!editor) return;
+          applyingExternal = true;
+          const model = editor.getModel();
+          if (model) {
+            monaco.editor.setModelLanguage(model, language || "plaintext");
+            if (model.getValue() !== text) {
+              model.setValue(text || "");
+            }
+          }
+          applyingExternal = false;
+          postCursor();
+        },
+        setLanguage: function (language) {
+          if (!editor) return;
+          const model = editor.getModel();
+          if (model) monaco.editor.setModelLanguage(model, language || "plaintext");
+        },
+        getValue: function () {
+          return editor ? editor.getValue() : "";
+        },
+        focus: function () {
+          if (editor) editor.focus();
+        },
+        isReady: function () {
+          return ready;
+        },
+        runAction: function (id) {
+          if (!editor) return;
+          editor.trigger("fastq", id, null);
+          editor.focus();
+        },
+        setWordWrap: function (on) {
+          if (!editor) return;
+          editor.updateOptions({ wordWrap: on ? "on" : "off" });
+        },
+        toggleWordWrap: function () {
+          if (!editor) return;
+          const current = editor.getOption(monaco.editor.EditorOption.wordWrap);
+          editor.updateOptions({ wordWrap: current === "on" ? "off" : "on" });
+        },
+        setFontSize: function (size) {
+          if (!editor) return;
+          fontSize = Math.max(10, Math.min(28, size));
+          editor.updateOptions({ fontSize: fontSize });
+          post("fontSize", { size: fontSize });
+        },
+        bumpFontSize: function (delta) {
+          this.setFontSize(fontSize + delta);
+        },
+        resetFontSize: function () {
+          this.setFontSize(13);
+        },
+        format: function () {
+          if (!editor) return;
+          editor.getAction("editor.action.formatDocument")?.run();
+        },
+        find: function () {
+          this.runAction("actions.find");
+        },
+        replace: function () {
+          this.runAction("editor.action.startFindReplaceAction");
+        },
+        goToLine: function () {
+          this.runAction("editor.action.gotoLine");
+        },
+        goToSymbol: function () {
+          this.runAction("editor.action.quickOutline");
+        },
+        commandPalette: function () {
+          this.runAction("editor.action.quickCommand");
+        },
+        toggleComment: function () {
+          this.runAction("editor.action.commentLine");
+        },
+        foldAll: function () {
+          this.runAction("editor.foldAll");
+        },
+        unfoldAll: function () {
+          this.runAction("editor.unfoldAll");
+        }
+      };
+    })();
+  </script>
+</body>
+</html>

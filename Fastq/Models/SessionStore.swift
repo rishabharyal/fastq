@@ -5,6 +5,8 @@ import AppKit
 @MainActor
 final class SessionStore: ObservableObject {
     @Published private(set) var sessions: [AgentSession] = []
+    /// Owns local Ghostty PTYs — same UUID as AgentSession.id.
+    let terminals = TerminalSessionStore()
 
     private var pollTimer: Timer?
 
@@ -32,77 +34,49 @@ final class SessionStore: ObservableObject {
     }
 
     func remove(_ id: UUID) {
+        terminals.quit(id)
         sessions.removeAll { $0.id == id }
-    }
-
-    func removeAllHostedInTerminal() {
-        sessions.removeAll { $0.hostedInFastqTerminal }
     }
 
     func session(id: UUID) -> AgentSession? {
         sessions.first { $0.id == id }
     }
 
-    private func pruneDeadSessions() {
-        let terminalAlive = FastqTerminalClient.shared.isTerminalProcessRunning()
-
-        // Cmd+Q (or crash) of Fastq Terminal kills every hosted tab — drop them here.
-        if !terminalAlive {
-            let hadHosted = sessions.contains(where: \.hostedInFastqTerminal)
-            sessions.removeAll(where: \.hostedInFastqTerminal)
-            if hadHosted {
-                objectWillChange.send()
-            }
-        }
-
-        sessions.removeAll { session in
-            if session.hostedInFastqTerminal {
-                // Still hosted only while Terminal process exists; finer sync below.
-                return false
-            }
-            guard session.status != .launching else { return false }
-            guard let pid = session.processIdentifier else {
-                return session.status == .exited
-            }
-            return !processIsAlive(pid)
-        }
-
-        for index in sessions.indices {
-            if sessions[index].hostedInFastqTerminal { continue }
-            if let pid = sessions[index].processIdentifier, !processIsAlive(pid) {
-                sessions[index].status = .exited
-            } else if sessions[index].status == .launching,
-                      let pid = sessions[index].processIdentifier,
-                      processIsAlive(pid) {
-                sessions[index].status = .running
-            }
-        }
-
-        sessions.removeAll { !$0.hostedInFastqTerminal && $0.status == .exited }
-
-        // If Terminal is up, drop launcher rows whose tabs no longer exist.
-        if terminalAlive, sessions.contains(where: \.hostedInFastqTerminal) {
-            Task { await syncHostedSessionsWithTerminal() }
-        }
+    func terminal(id: UUID) -> TerminalSession? {
+        terminals.sessions.first { $0.id == id }
     }
 
-    private func syncHostedSessionsWithTerminal() async {
-        guard FastqTerminalClient.shared.isTerminalAlive() else {
-            sessions.removeAll(where: \.hostedInFastqTerminal)
+    /// Upsert launcher row for a local terminal session (e.g. ⌘T shell).
+    func upsertFromTerminal(_ terminal: TerminalSession) {
+        let tool = AgentToolKind(rawValue: terminal.tool) ?? .shell
+        if let index = sessions.firstIndex(where: { $0.id == terminal.id }) {
+            sessions[index].processIdentifier = terminal.childPID
+            sessions[index].status = terminal.isRunning ? .running : .exited
             return
         }
-        do {
-            let remote = try await FastqTerminalClient.shared.listSessions()
-            let liveIDs = Set(remote.map(\.id))
-            sessions.removeAll { session in
-                session.hostedInFastqTerminal && !liveIDs.contains(session.id)
-            }
-        } catch {
-            // Socket flake — don't wipe sessions on a transient error.
-        }
+        let session = AgentSession(
+            id: terminal.id,
+            tool: tool,
+            projectName: terminal.projectName,
+            projectPath: terminal.projectPath,
+            promptPreview: terminal.title == "Terminal" ? "" : terminal.title,
+            model: .auto,
+            startedAt: Date(),
+            processIdentifier: terminal.childPID,
+            terminalWindowID: nil,
+            status: terminal.isRunning ? .running : .exited
+        )
+        sessions.insert(session, at: 0)
     }
 
-    private func processIsAlive(_ pid: pid_t) -> Bool {
-        kill(pid, 0) == 0
+    private func pruneDeadSessions() {
+        let liveIDs = Set(terminals.sessions.map(\.id))
+        sessions.removeAll { !liveIDs.contains($0.id) }
+
+        for index in sessions.indices {
+            guard let term = terminal(id: sessions[index].id) else { continue }
+            sessions[index].processIdentifier = term.childPID
+            sessions[index].status = term.isRunning ? .running : .exited
+        }
     }
 }

@@ -175,6 +175,10 @@ struct PromptEditor: NSViewRepresentable {
 
         func focusPrompt(selectAll: Bool, caret: Int? = nil) {
             guard parent.isEnabled, let textView else { return }
+            // Never summon a hidden launcher — makeKeyAndOrderFront below
+            // would steal key status from whichever window is actually open.
+            // (Always called on the main thread; AppKit below requires it.)
+            guard MainActor.assumeIsolated({ LauncherKeyRouter.shared.isLauncherVisible }) else { return }
             guard let window = textView.window ?? NSApp.keyWindow else { return }
 
             window.makeKeyAndOrderFront(nil)
