@@ -4,7 +4,6 @@ enum OnboardingStep: Int, CaseIterable, Identifiable {
     case welcome
     case projects
     case tools
-    case permissions
     case ready
 
     var id: Int { rawValue }
@@ -14,7 +13,6 @@ enum OnboardingStep: Int, CaseIterable, Identifiable {
         case .welcome: return "Welcome"
         case .projects: return "Projects"
         case .tools: return "Tools"
-        case .permissions: return "Access"
         case .ready: return "Ready"
         }
     }

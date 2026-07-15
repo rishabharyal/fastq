@@ -11,10 +11,6 @@ struct OnboardingView: View {
     @State private var isScanning = false
     @State private var appearLogo = false
     @State private var appearContent = false
-    @State private var permissionPulse = false
-    @State private var accessibilityGranted = false
-    @State private var automationRequested = false
-    @State private var automationGranted = false
 
     var body: some View {
         ZStack {
@@ -26,14 +22,11 @@ struct OnboardingView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 bottomBar
             }
-            .padding(28)
+            .padding(.horizontal, 32)
+            .padding(.top, 20)
+            .padding(.bottom, 24)
         }
-        .frame(width: 680, height: 520)
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
-        )
+        .frame(width: 720, height: 560)
         .onAppear {
             withAnimation(.spring(response: 0.7, dampingFraction: 0.78)) {
                 appearLogo = true
@@ -90,8 +83,6 @@ struct OnboardingView: View {
                 projectsStep
             case .tools:
                 toolsStep
-            case .permissions:
-                permissionsStep
             case .ready:
                 readyStep
             }
@@ -143,7 +134,7 @@ struct OnboardingView: View {
                 .font(.system(size: 28, weight: .medium))
                 .foregroundStyle(.white.opacity(0.92))
 
-            Text("Pick a project, choose Cursor / Claude Code / Codex, and send the prompt — then jump back to any live agent window from one place.")
+            Text("Pick a project, choose Cursor / Claude Code / Codex, and send the prompt — then jump back to any live agent from one place.")
                 .font(.system(size: 15))
                 .foregroundStyle(.white.opacity(0.55))
                 .frame(maxWidth: 460, alignment: .leading)
@@ -207,8 +198,9 @@ struct OnboardingView: View {
                                         .font(.system(size: 11))
                                         .foregroundStyle(.secondary)
                                         .lineLimit(1)
+                                        .truncationMode(.middle)
                                 }
-                                Spacer()
+                                Spacer(minLength: 8)
                                 Button {
                                     withAnimation(.easeOut(duration: 0.2)) {
                                         settings.removeProject(project)
@@ -219,8 +211,9 @@ struct OnboardingView: View {
                                 }
                                 .buttonStyle(.plain)
                             }
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 10)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 12)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                             .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                             .transition(.opacity.combined(with: .move(edge: .top)))
                         }
@@ -234,13 +227,13 @@ struct OnboardingView: View {
     }
 
     private var toolsStep: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            HStack(alignment: .top) {
+        VStack(alignment: .leading, spacing: 20) {
+            HStack(alignment: .firstTextBaseline) {
                 stepHeading(
                     title: "Choose your agents",
-                    subtitle: "We scanned your Mac for installed CLIs and apps."
+                    subtitle: "We scanned your Mac for installed CLIs. Turn on the ones you use."
                 )
-                Spacer()
+                Spacer(minLength: 12)
                 Button {
                     refreshDetections(animated: true)
                 } label: {
@@ -251,7 +244,7 @@ struct OnboardingView: View {
                 .disabled(isScanning)
             }
 
-            VStack(spacing: 8) {
+            VStack(spacing: 0) {
                 ForEach($settings.tools) { $tool in
                     let detection = detections.first(where: { $0.kind == tool.kind })
                     ToolOnboardingRow(
@@ -263,55 +256,23 @@ struct OnboardingView: View {
                             settings.defaultToolID = tool.id
                         }
                     )
+                    if tool.id != settings.tools.last?.id {
+                        Divider()
+                            .opacity(0.12)
+                            .padding(.leading, 52)
+                    }
                 }
             }
-
-            Spacer(minLength: 0)
-        }
-    }
-
-    private var permissionsStep: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            stepHeading(
-                title: "Let Fastq manage agent windows",
-                subtitle: "macOS only lists Fastq after it requests access. Use Grant first — then confirm in System Settings if asked."
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 4)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Color.white.opacity(0.04))
             )
-
-            VStack(spacing: 10) {
-                PermissionCard(
-                    icon: "terminal",
-                    title: "Automation",
-                    detail: "Lets Fastq open and focus Terminal (Claude Code / Codex).",
-                    status: automationStatusLabel,
-                    isGranted: automationGranted,
-                    primaryTitle: "Grant Access",
-                    primaryAction: grantAutomation,
-                    secondaryTitle: "Open Settings",
-                    secondaryAction: { PermissionsHelper.openAutomationSettings() }
-                )
-                .scaleEffect(permissionPulse ? 1.01 : 1)
-                .animation(.easeInOut(duration: 1.6).repeatForever(autoreverses: true), value: permissionPulse)
-
-                PermissionCard(
-                    icon: "hand.raised.fill",
-                    title: "Accessibility",
-                    detail: "Optional — helps paste prompts into Cursor.",
-                    status: accessibilityGranted ? "Enabled" : "Not enabled yet",
-                    isGranted: accessibilityGranted,
-                    primaryTitle: "Grant Access",
-                    primaryAction: grantAccessibility,
-                    secondaryTitle: "Open Settings",
-                    secondaryAction: { PermissionsHelper.openAccessibilitySettings() }
-                )
-            }
-            .onAppear {
-                permissionPulse = true
-                refreshPermissionStatus()
-            }
-
-            Text("After granting, Fastq appears under System Settings → Privacy & Security. Toggle it on if the prompt was dismissed.")
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
+            )
 
             Spacer(minLength: 0)
         }
@@ -332,7 +293,7 @@ struct OnboardingView: View {
             }
             .padding(.top, 4)
 
-            Text("Launched agents stick under the prompt so you can jump back — or quit them — without hunting windows.")
+            Text("Agents run inside Fastq — jump back to any live session without hunting windows.")
                 .font(.system(size: 14))
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: 440, alignment: .leading)
@@ -365,7 +326,7 @@ struct OnboardingView: View {
     }
 
     private var canSkipCurrent: Bool {
-        step == .projects || step == .permissions
+        step == .projects
     }
 
     private var hotkeyLabel: String {
@@ -377,10 +338,7 @@ struct OnboardingView: View {
 
     private var canContinue: Bool {
         switch step {
-        case .welcome, .permissions, .ready:
-            return true
-        case .projects:
-            // Allow continue even if empty when they used Skip; primary stays enabled so they can add then continue.
+        case .welcome, .projects, .ready:
             return true
         case .tools:
             return !settings.enabledTools.isEmpty
@@ -434,34 +392,6 @@ struct OnboardingView: View {
         }
     }
 
-    private var automationStatusLabel: String {
-        if automationGranted { return "Enabled" }
-        if automationRequested { return "Prompt shown — enable Fastq in the list if needed" }
-        return "Not requested yet"
-    }
-
-    private func refreshPermissionStatus() {
-        accessibilityGranted = PermissionsHelper.isAccessibilityTrusted
-    }
-
-    private func grantAccessibility() {
-        accessibilityGranted = PermissionsHelper.requestAccessibility(prompt: true)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-            refreshPermissionStatus()
-            if !accessibilityGranted {
-                PermissionsHelper.openAccessibilitySettings()
-            }
-        }
-    }
-
-    private func grantAutomation() {
-        automationRequested = true
-        PermissionsHelper.requestAutomationAccess()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-            PermissionsHelper.openAutomationSettings()
-        }
-    }
-
     private func addFolders() {
         FolderPicker.chooseDirectories { urls in
             guard !urls.isEmpty else { return }
@@ -499,43 +429,51 @@ private struct ToolOnboardingRow: View {
     var onMakeDefault: () -> Void
 
     var body: some View {
-        HStack(spacing: 12) {
-            Toggle(isOn: $tool.enabled) {
-                HStack(spacing: 10) {
-                    AgentBrandIcon(kind: tool.kind, size: 16)
-                        .frame(width: 22)
-                    VStack(alignment: .leading, spacing: 2) {
-                        HStack(spacing: 8) {
-                            Text(tool.displayName)
-                                .font(.system(size: 14, weight: .semibold))
-                            if isDefault {
-                                Text("Default")
-                                    .font(.system(size: 10, weight: .bold))
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 2)
-                                    .background(Color.accentColor.opacity(0.25), in: Capsule())
-                            }
-                        }
-                        Text(statusLine)
-                            .font(.system(size: 11))
-                            .foregroundStyle(isDetected ? Color.green.opacity(0.85) : Color.secondary)
-                            .lineLimit(1)
+        HStack(spacing: 14) {
+            AgentBrandIcon(kind: tool.kind, size: 18)
+                .frame(width: 28, height: 28)
+                .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 8) {
+                    Text(tool.displayName)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.primary)
+                    if isDefault {
+                        Text("Default")
+                            .font(.system(size: 10, weight: .bold))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.accentColor.opacity(0.25), in: Capsule())
                     }
                 }
+                Text(statusLine)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(isDetected ? Color.green.opacity(0.85) : Color.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
             }
-            .toggleStyle(.switch)
+
+            Spacer(minLength: 12)
 
             if tool.enabled, !isDefault {
                 Button("Set default", action: onMakeDefault)
                     .font(.system(size: 11, weight: .semibold))
                     .buttonStyle(.plain)
                     .foregroundStyle(.secondary)
+                    .fixedSize()
             }
+
+            Toggle("", isOn: $tool.enabled)
+                .toggleStyle(.switch)
+                .labelsHidden()
+                .fixedSize()
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .background(Color.white.opacity(tool.enabled ? 0.07 : 0.03), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .opacity(tool.enabled ? 1 : 0.7)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        .opacity(tool.enabled ? 1 : 0.55)
     }
 
     private var statusLine: String {
@@ -543,57 +481,6 @@ private struct ToolOnboardingRow: View {
             return detectedPath
         }
         return "Not detected — install the CLI, or set the path in Settings"
-    }
-}
-
-private struct PermissionCard: View {
-    let icon: String
-    let title: String
-    let detail: String
-    let status: String
-    let isGranted: Bool
-    let primaryTitle: String
-    let primaryAction: () -> Void
-    let secondaryTitle: String
-    let secondaryAction: () -> Void
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 14) {
-            Image(systemName: icon)
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(Color(red: 0.95, green: 0.36, blue: 0.28))
-                .frame(width: 28)
-                .padding(.top, 2)
-
-            VStack(alignment: .leading, spacing: 6) {
-                HStack {
-                    Text(title)
-                        .font(.system(size: 14, weight: .semibold))
-                    Spacer()
-                    Text(status)
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(isGranted ? Color.green.opacity(0.9) : Color.secondary)
-                }
-                Text(detail)
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                HStack(spacing: 14) {
-                    Button(primaryTitle, action: primaryAction)
-                        .font(.system(size: 12, weight: .semibold))
-                        .buttonStyle(.borderedProminent)
-                        .tint(Color(red: 0.95, green: 0.36, blue: 0.28))
-                    Button(secondaryTitle, action: secondaryAction)
-                        .font(.system(size: 12, weight: .semibold))
-                        .buttonStyle(.link)
-                }
-                .padding(.top, 4)
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(14)
-        .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 }
 
@@ -634,7 +521,7 @@ private struct OnboardingBackdrop: View {
             Color(red: 0.07, green: 0.07, blue: 0.08)
             LinearGradient(
                 colors: [
-                    Color(red: 0.55, green: 0.10, blue: 0.14).opacity(0.55),
+                    Color(red: 0.55, green: 0.10, blue: 0.14).opacity(0.45),
                     Color.clear
                 ],
                 startPoint: .topTrailing,
@@ -642,7 +529,7 @@ private struct OnboardingBackdrop: View {
             )
             RadialGradient(
                 colors: [
-                    Color(red: 0.85, green: 0.25, blue: 0.2).opacity(0.18),
+                    Color(red: 0.85, green: 0.25, blue: 0.2).opacity(0.14),
                     Color.clear
                 ],
                 center: .topLeading,

@@ -19,6 +19,7 @@ final class OnboardingWindowController: NSObject, NSWindowDelegate {
 
     func show() {
         if let window, window.isVisible {
+            positionNearTopCenter(window)
             window.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
             return
@@ -36,24 +37,22 @@ final class OnboardingWindowController: NSObject, NSWindowDelegate {
 
         let hosting = NSHostingController(rootView: root)
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 680, height: 520),
-            styleMask: [.titled, .closable, .fullSizeContentView],
+            contentRect: NSRect(x: 0, y: 0, width: 720, height: 560),
+            styleMask: [.titled, .closable, .miniaturizable],
             backing: .buffered,
             defer: false
         )
         window.title = "Welcome to Fastq"
-        window.titleVisibility = .hidden
-        window.titlebarAppearsTransparent = true
-        window.isOpaque = false
-        window.backgroundColor = .clear
+        window.isOpaque = true
+        window.backgroundColor = NSColor(red: 0.07, green: 0.07, blue: 0.08, alpha: 1)
         window.contentViewController = hosting
         window.delegate = self
         window.isReleasedWhenClosed = false
-        window.center()
         window.setFrameAutosaveName("")
         window.level = .floating
         window.collectionBehavior = [.fullScreenAuxiliary, .moveToActiveSpace]
         window.hasShadow = true
+        positionNearTopCenter(window)
 
         self.window = window
         NSApp.activate(ignoringOtherApps: true)
@@ -68,5 +67,19 @@ final class OnboardingWindowController: NSObject, NSWindowDelegate {
     func windowWillClose(_ notification: Notification) {
         // Never soft-complete — only the Ready CTA marks onboarding done.
         window = nil
+    }
+
+    /// Horizontally centered, tucked just under the menu bar.
+    private func positionNearTopCenter(_ window: NSWindow) {
+        guard let screen = NSScreen.main else {
+            window.center()
+            return
+        }
+        let visible = screen.visibleFrame
+        let size = window.frame.size
+        let x = visible.midX - size.width / 2
+        let topGap: CGFloat = 36
+        let y = visible.maxY - size.height - topGap
+        window.setFrame(NSRect(x: x, y: y, width: size.width, height: size.height), display: true)
     }
 }

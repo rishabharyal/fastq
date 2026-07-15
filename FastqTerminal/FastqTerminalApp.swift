@@ -18,7 +18,6 @@ struct FastqTerminalApp: App {
             }
         }
         .defaultSize(width: 1100, height: 720)
-        .windowStyle(.hiddenTitleBar)
         .commands {
             CommandGroup(replacing: .newItem) {
                 Button("New Terminal") {
@@ -39,15 +38,7 @@ struct FastqTerminalApp: App {
                 }
                 .keyboardShortcut("w", modifiers: [.command, .shift])
             }
-            CommandGroup(after: .sidebar) {
-                Button("Toggle Sidebar") {
-                    NotificationCenter.default.post(name: .fastqToggleTerminalSidebar, object: nil)
-                }
-                .keyboardShortcut("s", modifiers: .command)
-            }
             CommandMenu("Terminal") {
-                // With the terminal focused these are consumed by Ghostty's
-                // keybinds first; the menu covers sidebar/toolbar focus.
                 Button("Clear Screen") {
                     NotificationCenter.default.post(name: .fastqTerminalBindingAction, object: "clear_screen")
                 }
@@ -104,6 +95,8 @@ final class TerminalAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
     /// Strong retain — `orderOut` must not let us lose the window reference.
     private var retainedMainWindow: NSWindow?
     private var allowDestructiveClose = false
+    /// When true, the next adopt keeps the window hidden (agent sessions from launcher).
+    private var preferHidden = true
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
@@ -114,8 +107,7 @@ final class TerminalAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
         server.start()
         ipc = server
 
-        // Ctrl+Tab / Ctrl+Shift+Tab cycle tabs (before the focused terminal
-        // sees the event, matching every tabbed macOS app).
+        // Ctrl+Tab / Ctrl+Shift+Tab cycle tabs.
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard event.keyCode == 48, // Tab
                   event.modifierFlags.contains(.control),
@@ -127,27 +119,23 @@ final class TerminalAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
             return nil
         }
 
-        // App-owned Cmd shortcuts. The Ghostty surface consumes key
-        // equivalents (super+t etc.) before the menu bar sees them, so these
-        // must intercept ahead of event dispatch to work while typing.
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self else { return event }
             let mods = event.modifierFlags.intersection([.command, .option, .control, .shift])
 
-            // ⌥⌘← / ⌥⌘→ — prev/next tab, Terminal.app-style.
             if mods == [.command, .option] {
                 switch event.keyCode {
-                case 123: self.store.cycle(by: -1); return nil // ←
-                case 124: self.store.cycle(by: 1); return nil  // →
+                case 123: self.store.cycle(by: -1); return nil
+                case 124: self.store.cycle(by: 1); return nil
                 default: return event
                 }
             }
 
             if mods == [.command, .shift] {
                 switch event.keyCode {
-                case 33: self.store.cycle(by: -1); return nil // [
-                case 30: self.store.cycle(by: 1); return nil  // ]
-                case 13: self.store.quitAllInSelectedWorkspace(); return nil // W
+                case 33: self.store.cycle(by: -1); return nil
+                case 30: self.store.cycle(by: 1); return nil
+                case 13: self.store.quitAllInSelectedWorkspace(); return nil
                 default: return event
                 }
             }
@@ -157,9 +145,6 @@ final class TerminalAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
             case "t":
                 self.store.createShellSession()
                 self.showMainWindow()
-                return nil
-            case "s":
-                NotificationCenter.default.post(name: .fastqToggleTerminalSidebar, object: nil)
                 return nil
             case "w":
                 if let id = self.store.selectedSessionID {
@@ -187,6 +172,8 @@ final class TerminalAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
 
         DispatchQueue.main.async { [weak self] in
             self?.adoptExistingWindows()
+            // Launcher owns the UX — keep the PTY host window hidden by default.
+            self?.hideMainWindow()
         }
     }
 
@@ -207,26 +194,39 @@ final class TerminalAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
-        // If we were activated (Dock / launcher) with only a hidden window, reveal it
-        // when there are live sessions — mirrors Dock reopen behavior.
-        let hasHiddenMain = retainedMainWindow?.isVisible == false
-        if hasHiddenMain, !store.sessions.isEmpty {
-            // Don't auto-show on every activation (e.g. switching apps). Only when
-            // nothing else is visible — same as Dock click with no visible windows.
-            if !terminalWindows().contains(where: \.isVisible) {
-                showMainWindow()
-            }
-        }
+        // Dock / explicit activation may show the window; don't auto-show on
+        // every activation while the launcher is using a hidden PTY host.
     }
 
     func ensureRunning() {
         DispatchQueue.main.async { [weak self] in
             self?.adoptExistingWindows()
+            if self?.preferHidden == true {
+                self?.hideMainWindow()
+            }
         }
     }
 
-    /// Show the one terminal window (works after hide / from launcher IPC / Dock).
+    /// Ensure the SwiftUI window + Ghostty hosts exist without bringing the app forward.
+    func ensureMainWindowMounted() {
+        preferHidden = true
+        adoptExistingWindows()
+        collapseDuplicateWindows()
+
+        if retainedMainWindow == nil, terminalWindows().isEmpty {
+            NotificationCenter.default.post(name: .fastqOpenMainTerminalWindow, object: nil)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+                self?.adoptExistingWindows()
+                self?.hideMainWindow()
+            }
+        } else {
+            hideMainWindow()
+        }
+    }
+
+    /// Show the one terminal window (Dock / ⌘T / explicit reveal).
     func showMainWindow() {
+        preferHidden = false
         adoptExistingWindows()
         collapseDuplicateWindows()
 
@@ -236,13 +236,11 @@ final class TerminalAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
             retainedMainWindow = window
             window.deminiaturize(nil)
             window.collectionBehavior.insert(.moveToActiveSpace)
-            // `orderFrontRegardless` works even when another app (Fastq launcher) is key.
             window.orderFrontRegardless()
             window.makeKeyAndOrderFront(nil)
             return
         }
 
-        // No window instance — recreate the SwiftUI Window scene.
         NotificationCenter.default.post(name: .fastqOpenMainTerminalWindow, object: nil)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
             guard let self else { return }
@@ -275,10 +273,10 @@ final class TerminalAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
             }
             return true
         }
-        // Hide instead of destroy — keep the strong reference so launcher can restore it.
         if retainedMainWindow == nil {
             retainedMainWindow = sender
         }
+        preferHidden = true
         sender.orderOut(nil)
         return false
     }
@@ -295,10 +293,10 @@ final class TerminalAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
         guard isTerminalWindow(window) else { return }
         window.delegate = self
         window.isReleasedWhenClosed = false
-        window.titleVisibility = .hidden
-        window.titlebarAppearsTransparent = true
-        window.styleMask.insert(.fullSizeContentView)
-        window.toolbarStyle = .unified
+        window.titleVisibility = .visible
+        window.titlebarAppearsTransparent = false
+        window.styleMask.remove(.fullSizeContentView)
+        window.toolbar = nil
         if retainedMainWindow == nil {
             retainedMainWindow = window
         }
@@ -313,7 +311,6 @@ final class TerminalAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
             return
         }
 
-        // Always prefer the retained (original) window — never the newest visible duplicate.
         let keeper: NSWindow
         if let retained = retainedMainWindow, windows.contains(where: { $0 === retained }) {
             keeper = retained

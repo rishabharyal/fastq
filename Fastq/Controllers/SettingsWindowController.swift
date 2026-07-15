@@ -7,26 +7,31 @@ import SwiftUI
 final class SettingsWindowController: NSObject, NSWindowDelegate {
     private var window: NSWindow?
     private let settings: AppSettings
+    private let auth: FastplayAuthStore
     private let onReplayOnboarding: () -> Void
+    private var preferredTab: SettingsView.SettingsTab = .projects
 
-    init(settings: AppSettings, onReplayOnboarding: @escaping () -> Void) {
+    init(
+        settings: AppSettings,
+        auth: FastplayAuthStore = .shared,
+        onReplayOnboarding: @escaping () -> Void
+    ) {
         self.settings = settings
+        self.auth = auth
         self.onReplayOnboarding = onReplayOnboarding
         super.init()
     }
 
-    func show() {
+    func show(tab: SettingsView.SettingsTab = .projects) {
+        preferredTab = tab
         if let window {
+            // Rebuild content so the preferred tab applies.
+            window.contentViewController = makeHostingController()
             NSApp.activate(ignoringOtherApps: true)
             window.makeKeyAndOrderFront(nil)
             return
         }
 
-        let root = SettingsView(settings: settings) { [weak self] in
-            self?.close()
-            self?.onReplayOnboarding()
-        }
-        let hosting = NSHostingController(rootView: root)
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 580, height: 460),
             styleMask: [.titled, .closable, .miniaturizable],
@@ -34,7 +39,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             defer: false
         )
         window.title = "Fastq Settings"
-        window.contentViewController = hosting
+        window.contentViewController = makeHostingController()
         window.delegate = self
         window.isReleasedWhenClosed = false
         window.center()
@@ -47,12 +52,23 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         window.makeKeyAndOrderFront(nil)
     }
 
+    private func makeHostingController() -> NSHostingController<SettingsView> {
+        let root = SettingsView(
+            settings: settings,
+            auth: auth,
+            initialTab: preferredTab
+        ) { [weak self] in
+            self?.close()
+            self?.onReplayOnboarding()
+        }
+        return NSHostingController(rootView: root)
+    }
+
     func close() {
         window?.orderOut(nil)
     }
 
     func windowWillClose(_ notification: Notification) {
-        // Keep the window around so reopen is instant and reliable.
         window?.orderOut(nil)
     }
 

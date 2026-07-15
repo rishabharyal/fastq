@@ -5,9 +5,12 @@ import UniformTypeIdentifiers
 struct LauncherView: View {
     @ObservedObject var settings: AppSettings
     @ObservedObject var sessions: SessionStore
+    @ObservedObject var auth: FastplayAuthStore
     let launcher: AgentLauncher
     let onDismiss: () -> Void
     let onOpenSettings: () -> Void
+    var onOpenAccountSettings: (() -> Void)? = nil
+    var onOpenBoards: (() -> Void)? = nil
     var onOpenOnboarding: (() -> Void)? = nil
     var onOpenTerminal: (() -> Void)? = nil
 
@@ -26,14 +29,21 @@ struct LauncherView: View {
     @StateObject private var fileMentions = FileMentionIndex()
     @StateObject private var voice = VoiceDictationService()
     @StateObject private var chat = ChatService()
-    /// ⌘1 chat / ⌘2 agent; restored from settings and persisted on change.
+    @StateObject private var chatHistory = ChatHistoryStore()
+    @StateObject private var board = BoardStore()
+    /// ⌘1 chat / ⌘2 agent / ⌘N board; restored from settings and persisted on change.
     @State private var mode: LauncherMode = .agent
+    /// Keep ChatModeView (and its WKWebViews) mounted after first visit so agent↔chat is instant.
+    @State private var keepChatMounted = false
     @State private var mentionQuery: PromptMentionQuery?
     @State private var mentionResults: [FileMentionItem] = []
     @State private var mentionSelection = 0
     @State private var mentionVisible = false
     @State private var voiceError: String?
     @State private var showDictationOffAlert = false
+
+    /// → expands the panel into a full local Ghostty terminal.
+    @State private var isSessionPreviewOpen = false
 
     /// Prompt editor hugs its text (single line ≈ 24pt, grows to 72pt).
     @State private var promptHeight: CGFloat = 24
@@ -48,6 +58,15 @@ struct LauncherView: View {
 
     enum HeaderControl: Int, CaseIterable {
         case project, tool, model, attach
+        case workspace, boardProject, column
+    }
+
+    private var headerControlsForMode: [HeaderControl] {
+        switch mode {
+        case .chat: return [.attach]
+        case .agent: return [.project, .tool, .model, .attach]
+        case .board: return [.workspace, .boardProject, .column, .attach]
+        }
     }
 
     private var selectedProject: ProjectFolder? {
@@ -65,26 +84,43 @@ struct LauncherView: View {
     /// to show (sessions, setup steps, the chat thread) or an overlay needs
     /// room to render.
     private var showsContentArea: Bool {
-        if mode == .chat { return true }
+        if mode == .chat || mode == .board { return true }
+        if keepChatMounted, !chat.messages.isEmpty { return true }
+        if isSessionPreviewOpen { return true }
         return !sessions.sessions.isEmpty || settings.needsSetup || mentionVisible || showProjectPicker
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            header
-            if !attachments.isEmpty {
-                Divider().opacity(0.2)
-                attachmentStrip
+        ZStack {
+            // Keep Ghostty surfaces mounted for the life of each PTY so leaving
+            // the preview (chat mode, Back, etc.) does not wipe scrollback.
+            if !sessions.terminals.sessions.isEmpty {
+                persistentTerminalLayer
+                    .opacity(isSessionPreviewOpen ? 1 : 0)
+                    .allowsHitTesting(isSessionPreviewOpen)
+                    .accessibilityHidden(!isSessionPreviewOpen)
             }
-            if showsContentArea {
-                Divider().opacity(0.25)
-                content
+
+            if isSessionPreviewOpen, let session = previewedSession {
+                fullTerminalChrome(session)
+            } else {
+                VStack(spacing: 0) {
+                    header
+                    if !attachments.isEmpty {
+                        Divider().opacity(0.2)
+                        attachmentStrip
+                    }
+                    if showsContentArea {
+                        Divider().opacity(0.25)
+                        content
+                    }
+                    Divider().opacity(0.25)
+                    footer
+                }
             }
-            Divider().opacity(0.25)
-            footer
         }
-        .frame(width: LauncherMetrics.panelWidth)
-        .frame(height: showsContentArea ? LauncherMetrics.panelExpandedHeight : nil)
+        .frame(width: isSessionPreviewOpen ? 1180 : 720)
+        .frame(height: isSessionPreviewOpen ? 780 : (showsContentArea ? 480 : nil))
         .background(
             GeometryReader { proxy in
                 Color.clear.preference(key: LauncherPanelSizeKey.self, value: proxy.size)
@@ -99,9 +135,9 @@ struct LauncherView: View {
             )
         }
         .background(LauncherBackground())
-        .clipShape(RoundedRectangle(cornerRadius: LauncherMetrics.cornerRadius, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: LauncherMetrics.cornerRadius, style: .continuous)
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
         )
         .overlay(alignment: .topLeading) {
@@ -119,7 +155,7 @@ struct LauncherView: View {
         }
         .overlay(alignment: .bottom) {
             if showBoardToast {
-                Text("Board — coming soon")
+                Text(auth.isLoggedIn ? "Opening Boards…" : "Sign in to use Boards")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(.primary.opacity(0.9))
                     .padding(.horizontal, 14)
@@ -134,10 +170,30 @@ struct LauncherView: View {
         }
         .onAppear {
             bootstrapSelection()
+            chat.bind(historyStore: chatHistory)
+            chat.resetIfInactive()
+            if mode == .chat || !chat.messages.isEmpty {
+                keepChatMounted = true
+            }
             focusPromptSoon()
             installKeyMonitors()
             refreshMentionIndex()
             voice.prepare()
+            if mode == .board, auth.isLoggedIn {
+                Task { await board.bootstrap() }
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .fastqFocusLauncherPrompt)) { _ in
+            chat.resetIfInactive()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .fastqOpenSessionPreview)) { note in
+            if let id = note.object as? UUID {
+                selectedSessionID = id
+            }
+            openSessionPreview()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .fastqOpenShellPreview)) { _ in
+            openShellInPreview()
         }
         .onDisappear {
             removeKeyMonitors()
@@ -167,13 +223,36 @@ struct LauncherView: View {
                 mentionSelection = max(0, newValue.count - 1)
             }
         }
-        .alert("Couldn’t launch agent", isPresented: Binding(
+        .alert("Something went wrong", isPresented: Binding(
             get: { errorMessage != nil },
             set: { if !$0 { errorMessage = nil } }
         )) {
             Button("OK", role: .cancel) { errorMessage = nil }
         } message: {
             Text(errorMessage ?? "")
+        }
+        .sheet(isPresented: $board.showNewProjectSheet) {
+            VStack(alignment: .leading, spacing: 14) {
+                Text("New project")
+                    .font(.headline)
+                TextField("Project name", text: $board.newProjectName)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit {
+                        Task { await board.createProject(name: board.newProjectName) }
+                    }
+                HStack {
+                    Spacer()
+                    Button("Cancel") { board.showNewProjectSheet = false }
+                        .keyboardShortcut(.cancelAction)
+                    Button("Create") {
+                        Task { await board.createProject(name: board.newProjectName) }
+                    }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(board.newProjectName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+            .padding(20)
+            .frame(width: 360)
         }
         .alert("Voice input", isPresented: Binding(
             get: { voiceError != nil },
@@ -193,6 +272,11 @@ struct LauncherView: View {
         } message: {
             Text("Fastq dictation uses Apple speech recognition, which macOS only allows when Siri or Dictation is enabled. Turn on Dictation in System Settings → Keyboard, then try the mic again.")
         }
+        .onChange(of: auth.isLoggedIn) { _, loggedIn in
+            if loggedIn, mode == .board {
+                Task { await board.bootstrap() }
+            }
+        }
         .onChange(of: voice.phase) { _, phase in
             if case .failed(let message) = phase {
                 if message == VoiceDictationService.dictationDisabledMessage {
@@ -208,39 +292,63 @@ struct LauncherView: View {
                !settings.promptHistory.indices.contains(index) || newValue != settings.promptHistory[index] {
                 historyIndex = nil
             }
-            // Do not clear list navigation here — Raycast-style ↓ works with
-            // text still in the prompt. Printable keys clear it in the monitor.
+            // Typing pulls the arrows back to the prompt/caret.
+            if !newValue.isEmpty, historyIndex == nil {
+                isNavigatingTabs = false
+            }
         }
     }
 
-    // MARK: - Mode switch (⌘1 chat / ⌘2 agent)
+    // MARK: - Mode switch (⌘1 chat / ⌘2 agent / ⌘N board)
 
-    /// Leading prompt icon doubles as the mode indicator: 💬 chat / 🤖 agent.
-    /// Click toggles; ⌘1 / ⌘2 jump directly.
+    /// Leading prompt icon doubles as the mode indicator. Click cycles; shortcuts jump.
     private var modeIcon: some View {
         Button {
-            switchMode(to: mode == .chat ? .agent : .chat)
+            switchMode(to: mode.next)
         } label: {
-            Text(mode == .chat ? "💬" : "🤖")
-                .font(.system(size: 15))
-                .frame(width: 22, alignment: .center)
+            Image(systemName: mode.systemImage)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 22, height: 24, alignment: .center)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .padding(.top, 2)
-        .help(mode == .chat
-              ? "Chat mode — ⌘2 switches to Agent"
-              : "Agent mode — ⌘1 switches to Chat")
-        .accessibilityLabel(mode == .chat ? "Chat mode" : "Agent mode")
+        .help("Mode: \(mode.accessibilityLabel) — ⌘1 Chat · ⌘2 Agent · ⌘N Projects")
+        .accessibilityLabel(mode.accessibilityLabel)
     }
 
     private func switchMode(to target: LauncherMode) {
         guard mode != target else { return }
-        withAnimation(.easeOut(duration: 0.15)) {
-            mode = target
+        if target == .chat || target == .board, isSessionPreviewOpen {
+            closeSessionPreview()
         }
+        if target == .chat {
+            keepChatMounted = true
+        }
+        // Avoid animating the whole content tree — chat WKWebViews stay mounted.
+        mode = target
         settings.launcherMode = target
+        focusedControl = nil
+        if target == .chat {
+            chat.resetIfInactive()
+        }
+        if target == .board, auth.isLoggedIn {
+            Task { await board.bootstrap() }
+        }
         focusPromptSoon()
+    }
+
+    /// Chat toolbar “New” — archive the current thread (if any) and start a blank chat.
+    private func startNewChat() {
+        chat.startNewChat(persistCurrent: true)
+        prompt = ""
+        attachments = []
+        keepChatMounted = true
+        if mode != .chat {
+            switchMode(to: .chat)
+        } else {
+            focusPromptSoon()
+        }
     }
 
     /// Chat mode's counterpart to the tool/model chips: provider + model menu.
@@ -314,7 +422,7 @@ struct LauncherView: View {
                     .scaleEffect(voice.isListening ? 1 + CGFloat(voice.level) * 0.2 : 1)
                     .animation(.easeOut(duration: 0.08), value: voice.level)
             }
-            .frame(width: LauncherMetrics.iconButtonSize, height: LauncherMetrics.iconButtonSize)
+            .frame(width: 28, height: 28)
         }
         .buttonStyle(.plain)
         .disabled(showProjectPicker || {
@@ -367,19 +475,19 @@ struct LauncherView: View {
                         .strokeBorder(Color.accentColor.opacity(0.28), lineWidth: 1)
                 )
         )
-        .padding(.horizontal, LauncherMetrics.headerPaddingH)
+        .padding(.horizontal, 18)
         .padding(.bottom, 4)
         .transition(.move(edge: .top).combined(with: .opacity))
     }
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .top, spacing: 12) {
+            HStack(alignment: .center, spacing: 12) {
                 modeIcon
 
                 PromptEditor(
                     text: $prompt,
-                    placeholder: "Ask an agent…  @ for files",
+                    placeholder: promptPlaceholder,
                     isEnabled: !showProjectPicker,
                     isFocused: promptFocused && !showProjectPicker,
                     mentionActive: mentionVisible,
@@ -398,7 +506,7 @@ struct LauncherView: View {
                         mentionQuery = nil
                     },
                     onHeightChange: { height in
-                        let clamped = min(max(height, LauncherMetrics.promptMinHeight), LauncherMetrics.promptMaxHeight)
+                        let clamped = min(max(height, 24), 72)
                         if abs(clamped - promptHeight) > 0.5 {
                             promptHeight = clamped
                         }
@@ -406,21 +514,24 @@ struct LauncherView: View {
                 )
                 .frame(height: promptHeight)
 
-                // Mic + submit sit together as one cluster.
+                // Attach + mic + submit sit together as one cluster.
                 HStack(spacing: 2) {
+                    attachButton
                     voiceButton
                     submitButton
                 }
+                .frame(height: 24)
             }
 
             if voice.isListening {
                 listeningBanner
             }
 
-            HStack(spacing: LauncherMetrics.chipSpacing) {
-                if mode == .chat {
+            HStack(spacing: 6) {
+                switch mode {
+                case .chat:
                     chatModelChip
-                } else {
+                case .agent:
                     projectChip
                         .controlFocusRing(focusedControl == .project)
                         .accessibilityLabel("Project: \(selectedProject?.name ?? "none")")
@@ -430,13 +541,25 @@ struct LauncherView: View {
                     modelMenu
                         .controlFocusRing(focusedControl == .model)
                         .accessibilityLabel("Model: \(selectedModel.displayName)")
+                case .board:
+                    workspaceChip
+                        .controlFocusRing(focusedControl == .workspace)
+                        .accessibilityLabel("Workspace: \(board.selectedWorkspace?.name ?? "none")")
+                    boardProjectChip
+                        .controlFocusRing(focusedControl == .boardProject)
+                        .accessibilityLabel("Project: \(board.selectedProject?.name ?? "none")")
+                    columnChip
+                        .controlFocusRing(focusedControl == .column)
+                        .accessibilityLabel("Column: \(board.selectedColumn?.name ?? "none")")
                 }
 
-                if isLaunching, mode == .agent {
+                if isLaunching, mode == .agent || mode == .board {
                     HStack(spacing: 5) {
                         ProgressView()
                             .controlSize(.mini)
-                        Text("Starting \(selectedTool?.displayName ?? "agent")…")
+                        Text(mode == .board
+                              ? "Creating task…"
+                              : "Starting \(selectedTool?.displayName ?? "agent")…")
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(.secondary)
                     }
@@ -445,33 +568,36 @@ struct LauncherView: View {
                 }
 
                 Spacer(minLength: 0)
-                Button(action: pickAttachments) {
-                    HStack(spacing: 3) {
-                        Image(systemName: "paperclip")
-                            .font(.system(size: 12, weight: .semibold))
-                        if !attachments.isEmpty {
-                            Text("\(attachments.count)")
-                                .font(.system(size: 10.5, weight: .semibold, design: .rounded))
-                        }
-                    }
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, LauncherMetrics.chipPaddingH)
-                    .padding(.vertical, LauncherMetrics.chipPaddingV)
-                    .contentShape(Capsule())
-                }
-                .buttonStyle(.plain)
-                .controlFocusRing(focusedControl == .attach)
-                .help("Attach files — ⌘V pastes files from the clipboard")
-                .accessibilityLabel("Attach files")
             }
-            // Chips carry inner pill padding — pull the row left so
+            // Chips carry 8pt of inner pill padding — pull the row left so
             // the folder icon's visible edge lines up with the prompt column.
-            .padding(.leading, -LauncherMetrics.chipPaddingH)
+            .padding(.leading, -8)
         }
-        .padding(.horizontal, LauncherMetrics.headerPaddingH)
-        .padding(.top, LauncherMetrics.headerPaddingTop)
-        .padding(.bottom, LauncherMetrics.headerPaddingBottom)
+        .padding(.horizontal, 18)
+        .padding(.top, 16)
+        .padding(.bottom, 7)
         .animation(.easeOut(duration: 0.15), value: isLaunching)
+    }
+
+    private var attachButton: some View {
+        Button(action: pickAttachments) {
+            HStack(spacing: 3) {
+                Image(systemName: "paperclip")
+                    .font(.system(size: 13, weight: .semibold))
+                if !attachments.isEmpty {
+                    Text("\(attachments.count)")
+                        .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                }
+            }
+            .foregroundStyle(attachments.isEmpty ? Color.secondary : Color.accentColor)
+            .frame(minWidth: 22, minHeight: 22)
+            .padding(.horizontal, attachments.isEmpty ? 0 : 4)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .controlFocusRing(focusedControl == .attach)
+        .help("Attach files — ⌘V pastes files from the clipboard")
+        .accessibilityLabel("Attach files")
     }
 
     /// Plain → glyph; becomes a spinner while the agent (and, cold-start,
@@ -488,7 +614,7 @@ struct LauncherView: View {
                         .foregroundStyle(canGo ? Color.accentColor : Color.secondary.opacity(0.6))
                 }
             }
-            .frame(width: LauncherMetrics.iconButtonSize, height: LauncherMetrics.iconButtonSize)
+            .frame(width: 28, height: 28)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -500,12 +626,25 @@ struct LauncherView: View {
     private var canGo: Bool {
         if showProjectPicker { return false }
         let hasPrompt = !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        if mode == .chat {
+        switch mode {
+        case .chat:
             return hasPrompt && !chat.isStreaming
+        case .board:
+            if isLaunching { return false }
+            return hasPrompt && auth.isLoggedIn && board.selectedProject != nil
+        case .agent:
+            if isLaunching { return false }
+            let hasSession = selectedSessionID != nil
+            return hasPrompt || hasSession
         }
-        if isLaunching { return false }
-        let hasSession = selectedSessionID != nil
-        return hasPrompt || hasSession
+    }
+
+    private var promptPlaceholder: String {
+        switch mode {
+        case .chat: return "Ask anything…"
+        case .agent: return "Ask an agent…  @ for files"
+        case .board: return "Create a task…"
+        }
     }
 
     private var projectChip: some View {
@@ -557,7 +696,7 @@ struct LauncherView: View {
                     closeProjectPicker()
                 }
             )
-            .padding(.leading, LauncherMetrics.headerPaddingH)
+            .padding(.leading, 18)
             .padding(.top, 72)
             .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .topLeading)))
         }
@@ -602,6 +741,105 @@ struct LauncherView: View {
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
+    }
+
+    private var workspaceChip: some View {
+        Menu {
+            if board.workspaces.isEmpty {
+                Text("No workspaces")
+            } else {
+                ForEach(board.workspaces) { ws in
+                    Button {
+                        Task { await board.selectWorkspace(ws.id) }
+                    } label: {
+                        if board.selectedWorkspaceID == ws.id {
+                            Label(ws.name, systemImage: "checkmark")
+                        } else {
+                            Text(ws.name)
+                        }
+                    }
+                }
+            }
+        } label: {
+            ChipLabel(
+                systemIcon: "building.2",
+                title: board.selectedWorkspace?.name ?? "Workspace",
+                isActive: focusedControl == .workspace
+            )
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .disabled(!auth.isLoggedIn || board.workspaces.isEmpty)
+        .help("Workspace")
+    }
+
+    private var boardProjectChip: some View {
+        Menu {
+            if board.projects.isEmpty {
+                Text("No projects")
+            } else {
+                ForEach(board.projects) { project in
+                    Button {
+                        Task { await board.selectProject(project.id) }
+                    } label: {
+                        if board.selectedProjectID == project.id {
+                            Label(project.name, systemImage: "checkmark")
+                        } else {
+                            Text(project.name)
+                        }
+                    }
+                }
+            }
+            Divider()
+            Button("New project…") {
+                board.showNewProjectSheet = true
+            }
+            Button("Open Boards…") { openBoards() }
+        } label: {
+            ChipLabel(
+                systemIcon: "folder.fill",
+                title: board.selectedProject?.name ?? "Project",
+                isActive: focusedControl == .boardProject
+            )
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .disabled(!auth.isLoggedIn)
+        .help("Project")
+    }
+
+    private var columnChip: some View {
+        Menu {
+            let columns = (board.board?.columns ?? []).sorted { $0.position < $1.position }
+            if columns.isEmpty {
+                Text("No columns")
+            } else {
+                ForEach(columns) { column in
+                    Button {
+                        board.selectColumn(column.id)
+                    } label: {
+                        if board.selectedColumnID == column.id {
+                            Label(column.name, systemImage: "checkmark")
+                        } else {
+                            Text(column.name)
+                        }
+                    }
+                }
+            }
+        } label: {
+            ChipLabel(
+                systemIcon: "rectangle.split.3x1",
+                title: board.selectedColumn?.name ?? "Column",
+                isActive: focusedControl == .column
+            )
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .disabled(board.board?.columns.isEmpty != false)
+        .help("Board column")
     }
 
     private var mentionPopup: some View {
@@ -694,8 +932,16 @@ struct LauncherView: View {
             HStack(spacing: 8) {
                 ForEach(attachments) { attachment in
                     HStack(spacing: 6) {
-                        Image(systemName: attachment.isImage ? "photo" : "doc")
-                            .font(.caption)
+                        if attachment.isImage, let image = NSImage(contentsOfFile: attachment.path) {
+                            Image(nsImage: image)
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .frame(width: 22, height: 22)
+                                .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                        } else {
+                            Image(systemName: attachment.isImage ? "photo" : "doc")
+                                .font(.caption)
+                        }
                         Text(attachment.name)
                             .font(.caption)
                             .lineLimit(1)
@@ -713,7 +959,7 @@ struct LauncherView: View {
                     .background(Color.white.opacity(0.06), in: Capsule())
                 }
             }
-            .padding(.horizontal, LauncherMetrics.headerPaddingH)
+            .padding(.horizontal, 18)
             .padding(.vertical, 10)
         }
     }
@@ -721,20 +967,163 @@ struct LauncherView: View {
     // MARK: - Content
 
     private var content: some View {
-        Group {
-            if mode == .chat {
+        ZStack {
+            // Agent sessions / empty — only interactive in agent mode.
+            Group {
+                if sessions.sessions.isEmpty {
+                    emptyState
+                } else {
+                    sessionList
+                }
+            }
+            .opacity(mode == .agent ? 1 : 0)
+            .allowsHitTesting(mode == .agent)
+            .accessibilityHidden(mode != .agent)
+
+            BoardModeView(
+                store: board,
+                auth: auth,
+                onSignIn: {
+                    if let onOpenAccountSettings {
+                        onOpenAccountSettings()
+                    } else {
+                        onOpenSettings()
+                    }
+                },
+                onOpenBoards: openBoards
+            )
+            .opacity(mode == .board ? 1 : 0)
+            .allowsHitTesting(mode == .board)
+            .accessibilityHidden(mode != .board)
+
+            // Keep chat mounted after first open so agent→chat doesn't remount WKWebViews.
+            if keepChatMounted || mode == .chat {
                 ChatModeView(
                     chat: chat,
+                    history: chatHistory,
                     providerName: settings.chatProvider.displayName,
-                    modelName: settings.chatProvider.displayName(forModel: settings.chatModel)
+                    modelName: settings.chatProvider.displayName(forModel: settings.chatModel),
+                    onNewChat: startNewChat
                 )
-            } else if sessions.sessions.isEmpty {
-                emptyState
-            } else {
-                sessionList
+                .opacity(mode == .chat ? 1 : 0)
+                .allowsHitTesting(mode == .chat)
+                .accessibilityHidden(mode != .chat)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    // MARK: - Full terminal (→ / ↩ / after launch)
+
+    private var previewedSession: AgentSession? {
+        sessions.sessions.first(where: { $0.id == selectedSessionID })
+    }
+
+    /// Chrome only — surfaces live in `persistentTerminalLayer` underneath.
+    private func fullTerminalChrome(_ session: AgentSession) -> some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                Button(action: closeSessionPreview) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 10, weight: .semibold))
+                        Text("Back")
+                            .font(.system(size: 11, weight: .semibold))
+                    }
+                    .foregroundStyle(.secondary)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Back to the list (← / esc)")
+
+                Image(systemName: session.tool.systemImage)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(session.status == .running ? Color.accentColor : .secondary)
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(session.title)
+                        .font(.system(size: 12.5, weight: .semibold))
+                        .lineLimit(1)
+                    Text(session.subtitle)
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 8)
+
+                Text("↑↓ switch · esc back")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.secondary)
+
+                Button {
+                    launcher.quit(session)
+                    closeSessionPreview()
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 22, height: 22)
+                        .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .help("Quit session")
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+
+            Divider().opacity(0.2)
+
+            Spacer(minLength: 0)
+                .allowsHitTesting(false)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+
+    /// Stable Ghostty host stack — must stay in the view tree so remounting
+    /// does not drop PTY scrollback (receive requires a live surface).
+    private var persistentTerminalLayer: some View {
+        VStack(spacing: 0) {
+            Color.clear.frame(height: isSessionPreviewOpen ? 45 : 0)
+            ZStack {
+                Color(red: 18 / 255, green: 18 / 255, blue: 20 / 255)
+
+                ForEach(sessions.terminals.sessions) { terminal in
+                    let isSelected = terminal.id == selectedSessionID
+                    GhosttyTerminalHost(
+                        session: terminal,
+                        isActive: isSelected && isSessionPreviewOpen
+                    )
+                    .opacity(isSelected ? 1 : 0)
+                    .allowsHitTesting(isSelected && isSessionPreviewOpen)
+                    .id(terminal.id)
+                }
+
+                if let selectedSessionID, sessions.terminal(id: selectedSessionID) == nil {
+                    Text("Starting terminal…")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    private func openSessionPreview() {
+        guard mode == .agent, let session = previewedSession else { return }
+        sessions.terminals.select(session.id)
+        withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) {
+            isSessionPreviewOpen = true
+        }
+        LauncherKeyRouter.shared.isSessionPreviewOpen = true
+    }
+
+    private func closeSessionPreview() {
+        LauncherKeyRouter.shared.isSessionPreviewOpen = false
+        withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) {
+            isSessionPreviewOpen = false
+        }
+        focusPromptSoon()
     }
 
     private var emptyState: some View {
@@ -820,30 +1209,29 @@ struct LauncherView: View {
 
     private var sessionList: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Active Windows")
-                .font(.system(size: LauncherMetrics.listSectionTitleSize, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .textCase(.uppercase)
-                .padding(.horizontal, LauncherMetrics.headerPaddingH)
-                .padding(.top, 14)
-                .accessibilityHint("Press Down Arrow to navigate, Return to open")
+            HStack {
+                Text("Active Sessions")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+                Spacer()
+                Text("→ open")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.secondary.opacity(0.8))
+            }
+            .padding(.horizontal, 18)
+            .padding(.top, 14)
 
             ScrollView {
-                LazyVStack(spacing: LauncherMetrics.rowSpacing) {
+                LazyVStack(spacing: 4) {
                     ForEach(sessions.sessions) { session in
                         SessionRow(
                             session: session,
                             isSelected: selectedSessionID == session.id,
-                            isListFocused: isNavigatingTabs && selectedSessionID == session.id,
-                            onSelect: {
-                                selectedSessionID = session.id
-                                isNavigatingTabs = true
-                            },
+                            onSelect: { selectedSessionID = session.id },
                             onFocus: {
                                 selectedSessionID = session.id
-                                isNavigatingTabs = true
-                                launcher.focus(session)
-                                onDismiss()
+                                openSessionPreview()
                             },
                             onQuit: {
                                 launcher.quit(session)
@@ -851,7 +1239,7 @@ struct LauncherView: View {
                         )
                     }
                 }
-                .padding(.horizontal, LauncherMetrics.listHorizontalInset)
+                .padding(.horizontal, 10)
                 .padding(.bottom, 12)
             }
         }
@@ -866,9 +1254,8 @@ struct LauncherView: View {
             Spacer()
 
             if let session = sessions.sessions.first(where: { $0.id == selectedSessionID }) {
-                FooterAction(title: "Open Window", key: "↩") {
-                    launcher.focus(session)
-                    onDismiss()
+                FooterAction(title: "Open", key: "↩") {
+                    openSessionPreview()
                 }
                 FooterAction(title: "Quit", key: "⌫") {
                     launcher.quit(session)
@@ -876,36 +1263,43 @@ struct LauncherView: View {
                 Divider().frame(height: 14)
             }
 
-            FooterAction(title: "Board", key: "⌘B", action: showBoardPlaceholder)
+            FooterAction(title: "Board", key: "⌘B", action: openBoards)
             FooterAction(title: "Settings", key: "⌘,") {
                 onOpenSettings()
             }
-            FooterAction(title: "Terminal", key: "⌘T") {
-                onOpenTerminal?()
-            }
         }
-        .padding(.horizontal, LauncherMetrics.footerPaddingH)
-        .padding(.vertical, LauncherMetrics.footerPaddingV)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
         .background(Color.black.opacity(0.18))
     }
 
-    /// Bottom-left account slot: placeholder auth for now — "logged in" shows
-    /// the local macOS profile (initials avatar + full name).
+    /// Bottom-left account slot — Fastplay account when signed in.
     @ViewBuilder
     private var accountItem: some View {
-        if settings.isLoggedIn {
+        if auth.isLoggedIn, let user = auth.user {
             Menu {
-                Button("Log Out") { settings.isLoggedIn = false }
+                Button("Boards") { openBoards() }
+                Button("Account Settings…") {
+                    if let onOpenAccountSettings {
+                        onOpenAccountSettings()
+                    } else {
+                        onOpenSettings()
+                    }
+                }
+                Divider()
+                Button("Sign Out") {
+                    Task { await auth.logout() }
+                }
             } label: {
                 HStack(spacing: 7) {
                     ZStack {
                         Circle().fill(Color.accentColor.opacity(0.85))
-                        Text(Self.userInitials)
+                        Text(user.initials)
                             .font(.system(size: 8.5, weight: .bold, design: .rounded))
                             .foregroundStyle(.white)
                     }
                     .frame(width: 18, height: 18)
-                    Text(NSFullUserName())
+                    Text(user.name.isEmpty ? user.email : user.name)
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -914,11 +1308,14 @@ struct LauncherView: View {
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .fixedSize()
-            .accessibilityLabel("Account: \(NSFullUserName())")
+            .accessibilityLabel("Account: \(user.name)")
         } else {
             Button {
-                // Placeholder sign-in: adopt the local macOS profile.
-                settings.isLoggedIn = true
+                if let onOpenAccountSettings {
+                    onOpenAccountSettings()
+                } else {
+                    onOpenSettings()
+                }
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "person.crop.circle")
@@ -933,48 +1330,77 @@ struct LauncherView: View {
         }
     }
 
-    private static var userInitials: String {
-        let parts = NSFullUserName().split(separator: " ").prefix(2)
-        let initials = parts.compactMap(\.first).map(String.init).joined()
-        return initials.isEmpty ? "?" : initials.uppercased()
+    private func openBoards() {
+        if auth.isLoggedIn {
+            onOpenBoards?()
+        } else {
+            withAnimation(.easeOut(duration: 0.15)) {
+                showBoardToast = true
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) {
+                withAnimation(.easeIn(duration: 0.2)) {
+                    showBoardToast = false
+                }
+                onOpenAccountSettings?()
+                if onOpenAccountSettings == nil {
+                    onOpenSettings()
+                }
+            }
+        }
     }
 
     private func showBoardPlaceholder() {
-        withAnimation(.easeOut(duration: 0.15)) {
-            showBoardToast = true
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) {
-            withAnimation(.easeIn(duration: 0.2)) {
-                showBoardToast = false
-            }
-        }
+        openBoards()
     }
 
     // MARK: - Actions
 
     private func submitPrimary() {
         if showProjectPicker { return }
-        if mode == .chat {
+        switch mode {
+        case .chat:
             sendChatMessage()
+        case .board:
+            Task { await createBoardTask() }
+        case .agent:
+            if sessions.sessions.contains(where: { $0.id == selectedSessionID }),
+               prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                openSessionPreview()
+                return
+            }
+            settings.recordPrompt(prompt)
+            historyIndex = nil
+            Task { await launchAgent() }
+        }
+    }
+
+    private func createBoardTask() async {
+        let title = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty else { return }
+        guard auth.isLoggedIn else {
+            errorMessage = "Sign in to create tasks."
             return
         }
-        // While arrow-navigating Active Windows, ↩ always opens the selection
-        // (Raycast/Alfred result-activation model).
-        if isNavigatingTabs,
-           let session = sessions.sessions.first(where: { $0.id == selectedSessionID }) {
-            launcher.focus(session)
-            onDismiss()
+        guard board.selectedProject != nil else {
+            errorMessage = "Pick a workspace and project first."
             return
         }
-        if let session = sessions.sessions.first(where: { $0.id == selectedSessionID }),
-           prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            launcher.focus(session)
-            onDismiss()
-            return
-        }
+        isLaunching = true
+        defer { isLaunching = false }
         settings.recordPrompt(prompt)
         historyIndex = nil
-        Task { await launchAgent() }
+        let files = attachments.map { URL(fileURLWithPath: $0.path) }
+        do {
+            _ = try await board.createTaskFromLauncher(
+                title: title,
+                columnID: board.selectedColumnID,
+                attachmentURLs: files
+            )
+            prompt = ""
+            attachments = []
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 
     private func sendChatMessage() {
@@ -1000,6 +1426,9 @@ struct LauncherView: View {
 
     private func bootstrapSelection() {
         mode = settings.launcherMode
+        if mode == .chat || !chat.messages.isEmpty {
+            keepChatMounted = true
+        }
         if let recent = settings.recentProjectIDs.first,
            settings.projects.contains(where: { $0.id == recent }) {
             selectedProjectID = recent
@@ -1047,7 +1476,7 @@ struct LauncherView: View {
         defer { isLaunching = false }
 
         do {
-            let session = try await launcher.launch(
+            let session = try launcher.launch(
                 prompt: prompt,
                 project: project,
                 tool: tool,
@@ -1059,10 +1488,45 @@ struct LauncherView: View {
             selectedSessionID = session.id
             prompt = ""
             attachments = []
-            onDismiss()
+            openSessionPreview()
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    /// ⌘T — open a plain shell in the launcher terminal.
+    /// Reuses an existing shell when one is already running; no-ops if the
+    /// terminal preview is already open.
+    private func openShellInPreview() {
+        if isSessionPreviewOpen { return }
+
+        if let existing = existingShellTerminal() {
+            sessions.terminals.select(existing.id)
+            selectedSessionID = existing.id
+            sessions.upsertFromTerminal(existing)
+            openSessionPreview()
+            return
+        }
+
+        let path = selectedProject?.path ?? NSHomeDirectory()
+        guard let terminal = sessions.terminals.createShellSession(at: path) else {
+            errorMessage = "Couldn’t start a terminal."
+            return
+        }
+        sessions.upsertFromTerminal(terminal)
+        selectedSessionID = terminal.id
+        openSessionPreview()
+    }
+
+    /// Prefer the selected shell, otherwise the most recently created shell tab.
+    private func existingShellTerminal() -> TerminalSession? {
+        let shells = sessions.terminals.sessions.filter { $0.isShell || $0.isFallbackShell }
+        guard !shells.isEmpty else { return nil }
+        if let selectedSessionID,
+           let selected = shells.first(where: { $0.id == selectedSessionID }) {
+            return selected
+        }
+        return shells.last
     }
 
     private func addProjectFolders() {
@@ -1121,55 +1585,30 @@ struct LauncherView: View {
             attachments.wrappedValue = current
         }
 
-        LauncherKeyRouter.shared.clearControlFocus = { [focusedControl = $focusedControl, navigating = $isNavigatingTabs] in
-            if focusedControl.wrappedValue != nil {
-                focusedControl.wrappedValue = nil
-                LauncherKeyRouter.shared.focusPromptNow?()
-                return true
-            }
-            if navigating.wrappedValue {
-                navigating.wrappedValue = false
-                LauncherKeyRouter.shared.focusPromptNow?()
-                return true
-            }
-            return false
+        LauncherKeyRouter.shared.clearControlFocus = { [focusedControl = $focusedControl] in
+            guard focusedControl.wrappedValue != nil else { return false }
+            focusedControl.wrappedValue = nil
+            LauncherKeyRouter.shared.focusPromptNow?()
+            return true
         }
 
-        // Arrow navigation must use Bindings — the NSEvent closure captures a
-        // View struct copy; writing through $State is what actually updates UI.
-        let navigatingBinding = $isNavigatingTabs
-        let selectedBinding = $selectedSessionID
-        let historyBinding = $historyIndex
-        let promptBinding = $prompt
-        let modeBinding = $mode
-        let sessionsRef = sessions
-        let settingsRef = settings
-        let launcherRef = launcher
-
-        LauncherKeyRouter.shared.handleArrowKey = { up in
-            navigateLauncherArrows(
-                up: up,
-                mode: modeBinding.wrappedValue,
-                isNavigatingTabs: navigatingBinding,
-                selectedSessionID: selectedBinding,
-                historyIndex: historyBinding,
-                prompt: promptBinding,
-                sessions: sessionsRef,
-                settings: settingsRef,
-                launcher: launcherRef
-            )
+        LauncherKeyRouter.shared.closeSessionPreview = {
+            closeSessionPreview()
         }
 
         // Keyboard model (Esc itself is owned by LauncherPanelController):
-        //   Tab / ⇧Tab   cycle prompt → chips → Active Windows → prompt
+        //   Tab / ⇧Tab   cycle header controls
         //   focused chip: ←→↑↓ change its value, Return/Space activates,
         //                 any printable key falls through to the prompt
-        //   ↓            enter / move Active Windows (Raycast-style)
-        //   ↑            prompt history, or move up in Active Windows
-        //   ⌫            quit selected Active Window (empty prompt / list focus)
-        //   ⌘B           Board placeholder · ⌘V attach from clipboard
-        //   ⌘,           Settings (panel controller)
+        //   ↑ / ↓        prompt history ↔ session-tab selection
+        //   ⌘1/2/N(or 3) Chat / Agent / Projects · ⌘B Boards · ⌘V attach
         pasteMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            // The panel hides via orderOut, so onDisappear never removes this
+            // monitor — without this gate it hijacks keystrokes in every other
+            // window (Settings, onboarding): the type-anywhere branch steals
+            // key status back to the hidden launcher on each printable key.
+            guard LauncherKeyRouter.shared.isLauncherVisible,
+                  event.window is NSPanel else { return event }
             guard !LauncherKeyRouter.shared.isProjectPickerOpen else { return event }
             let mods = event.modifierFlags.intersection([.command, .option, .control, .shift])
 
@@ -1181,8 +1620,11 @@ struct LauncherView: View {
                 case "2":
                     DispatchQueue.main.async { switchMode(to: .agent) }
                     return nil
+                case "3", "n":
+                    DispatchQueue.main.async { switchMode(to: .board) }
+                    return nil
                 case "b":
-                    DispatchQueue.main.async { showBoardPlaceholder() }
+                    DispatchQueue.main.async { openBoards() }
                     return nil
                 case "v":
                     let pb = NSPasteboard.general
@@ -1207,18 +1649,10 @@ struct LauncherView: View {
                 }
             }
 
-            // ⌫ / Forward Delete — quit selected Active Window (footer "Quit").
-            // Only when prompt is empty or list navigation is active so typing
-            // still deletes characters normally.
-            if mods.isEmpty, event.keyCode == 51 || event.keyCode == 117 {
-                if LauncherKeyRouter.shared.isMentionPopupOpen { return event }
-                let promptEmpty = prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                if promptEmpty || isNavigatingTabs,
-                   let id = selectedSessionID,
-                   let session = sessions.sessions.first(where: { $0.id == id }) {
-                    DispatchQueue.main.async { launcher.quit(session) }
-                    return nil
-                }
+            // Interactive terminal mirror owns keys while it's first responder
+            // (so agents can take typed replies). Esc still closes via the panel.
+            if LauncherKeyRouter.shared.isSessionPreviewOpen,
+               event.window?.firstResponder is FastqSurfaceView {
                 return event
             }
 
@@ -1246,31 +1680,40 @@ struct LauncherView: View {
                     // the keystroke land there (type-anywhere).
                     if isPrintable(event) {
                         focusedControl = nil
-                        isNavigatingTabs = false
                         LauncherKeyRouter.shared.focusPromptNow?()
                     }
                     return event
                 }
             }
 
-            // ↑ / ↓ — prompt history ↔ Active Windows (mention popup owns these).
-            if event.keyCode == 125 || event.keyCode == 126 {
-                if LauncherKeyRouter.shared.isMentionPopupOpen { return event }
-                if LauncherKeyRouter.shared.handleArrowKey?(event.keyCode == 126) == true {
-                    return nil
-                }
-                return event
+            // ← folds the session preview back into the list (when not typing).
+            if event.keyCode == 123, mods.isEmpty, LauncherKeyRouter.shared.isSessionPreviewOpen {
+                DispatchQueue.main.async { closeSessionPreview() }
+                return nil
             }
 
-            // Type-anywhere: printable keys leave list focus, refocus prompt.
+            // → on the session list expands into the live interactive terminal.
+            if event.keyCode == 124, mods.isEmpty,
+               mode == .agent,
+               !LauncherKeyRouter.shared.isSessionPreviewOpen,
+               !LauncherKeyRouter.shared.isMentionPopupOpen,
+               selectedSessionID != nil,
+               isNavigatingTabs || prompt.isEmpty {
+                DispatchQueue.main.async { openSessionPreview() }
+                return nil
+            }
+
+            // ↑ / ↓ — prompt history, then session tabs (mention popup owns these).
+            if event.keyCode == 125 || event.keyCode == 126 {
+                if LauncherKeyRouter.shared.isMentionPopupOpen { return event }
+                return handleArrowKey(up: event.keyCode == 126) ? nil : event
+            }
+
+            // Type-anywhere: printable keys refocus the prompt, then land in it.
             if mods.isEmpty || mods == .shift,
-               isPrintable(event) {
-                if isNavigatingTabs {
-                    isNavigatingTabs = false
-                }
-                if !(event.window?.firstResponder is PromptNSTextView) {
-                    LauncherKeyRouter.shared.focusPromptNow?()
-                }
+               isPrintable(event),
+               !(event.window?.firstResponder is PromptNSTextView) {
+                LauncherKeyRouter.shared.focusPromptNow?()
                 return event
             }
 
@@ -1306,79 +1749,19 @@ struct LauncherView: View {
 
     // MARK: - Header control focus (Tab cycle)
 
-    /// Tab order: prompt → project → agent → model → attach → Active Windows → prompt.
     private func cycleControlFocus(backwards: Bool) {
-        let chips = HeaderControl.allCases
-        let hasSessionList = mode == .agent && !sessions.sessions.isEmpty
-
-        // Already in Active Windows — Tab leaves the list.
-        if isNavigatingTabs {
-            isNavigatingTabs = false
-            if backwards {
-                focusedControl = chips.last
-            } else {
-                focusedControl = nil
-                LauncherKeyRouter.shared.focusPromptNow?()
-            }
+        let all = headerControlsForMode
+        guard !all.isEmpty else { return }
+        guard let current = focusedControl, let index = all.firstIndex(of: current) else {
+            focusedControl = backwards ? all.last : all.first
             return
         }
-
-        if backwards {
-            if let current = focusedControl, let index = chips.firstIndex(of: current) {
-                if index > 0 {
-                    focusedControl = chips[index - 1]
-                } else {
-                    // First chip ← → Active Windows (if any) or prompt.
-                    focusedControl = nil
-                    if hasSessionList {
-                        enterSessionListFocus()
-                    } else {
-                        LauncherKeyRouter.shared.focusPromptNow?()
-                    }
-                }
-            } else {
-                // Prompt ← → Active Windows (if any) or last chip.
-                if hasSessionList {
-                    enterSessionListFocus()
-                } else {
-                    focusedControl = chips.last
-                }
-            }
-            return
-        }
-
-        // Forward Tab
-        if let current = focusedControl, let index = chips.firstIndex(of: current) {
-            if index + 1 < chips.count {
-                focusedControl = chips[index + 1]
-            } else {
-                // Last chip → Active Windows (if any) or prompt.
-                focusedControl = nil
-                if hasSessionList {
-                    enterSessionListFocus()
-                } else {
-                    LauncherKeyRouter.shared.focusPromptNow?()
-                }
-            }
+        let next = index + (backwards ? -1 : 1)
+        if all.indices.contains(next) {
+            focusedControl = all[next]
         } else {
-            // Prompt → first chip.
-            focusedControl = chips.first
-            isNavigatingTabs = false
-        }
-    }
-
-    private func enterSessionListFocus() {
-        focusedControl = nil
-        isNavigatingTabs = true
-        let list = sessions.sessions
-        guard !list.isEmpty else { return }
-        if selectedSessionID == nil || !list.contains(where: { $0.id == selectedSessionID }) {
-            selectedSessionID = list.first?.id
-        }
-        if let id = selectedSessionID,
-           let session = list.first(where: { $0.id == id }),
-           session.hostedInFastqTerminal {
-            launcher.selectTerminalTab(id)
+            focusedControl = nil
+            LauncherKeyRouter.shared.focusPromptNow?()
         }
     }
 
@@ -1389,7 +1772,7 @@ struct LauncherView: View {
                 showProjectPicker = true
                 LauncherKeyRouter.shared.isProjectPickerOpen = true
             }
-        case .tool, .model:
+        case .tool, .model, .workspace, .boardProject, .column:
             adjustControl(control, by: 1)
         case .attach:
             pickAttachments()
@@ -1418,12 +1801,80 @@ struct LauncherView: View {
             let all = AgentModelOption.allCases
             let index = all.firstIndex(of: selectedModel) ?? 0
             selectedModel = all[wrapped(index, all.count)]
+        case .workspace:
+            let list = board.workspaces
+            guard !list.isEmpty else { return }
+            let index = list.firstIndex(where: { $0.id == board.selectedWorkspaceID }) ?? 0
+            let next = list[wrapped(index, list.count)]
+            Task { await board.selectWorkspace(next.id) }
+        case .boardProject:
+            let list = board.projects
+            guard !list.isEmpty else { return }
+            let index = list.firstIndex(where: { $0.id == board.selectedProjectID }) ?? 0
+            let next = list[wrapped(index, list.count)]
+            Task { await board.selectProject(next.id) }
+        case .column:
+            let list = (board.board?.columns ?? []).sorted { $0.position < $1.position }
+            guard !list.isEmpty else { return }
+            let index = list.firstIndex(where: { $0.id == board.selectedColumnID }) ?? 0
+            board.selectColumn(list[wrapped(index, list.count)].id)
         case .attach:
             break
         }
     }
 
     // MARK: - Prompt history (↑) ↔ session tabs (↓)
+
+    /// Shell-style recall that coexists with tab selection: ↑ walks history
+    /// older (from an empty or recalled prompt), ↓ walks newer; stepping past
+    /// the newest entry empties the prompt, and from an empty prompt ↓/↑
+    /// cycle the active session tabs. While typing normal text the arrows
+    /// stay with the caret. Returns true when the key was consumed.
+    private func handleArrowKey(up: Bool) -> Bool {
+        let history = settings.promptHistory
+        if up {
+            // Walking the tab list: ↑ steps to the previous tab. At the top
+            // it detents (drops out of tab mode); the next ↑ opens history.
+            if isNavigatingTabs {
+                if selectedSessionID == sessions.sessions.first?.id {
+                    isNavigatingTabs = false
+                } else {
+                    cycleActiveSessions(by: -1)
+                }
+                return true
+            }
+            if historyIndex == nil, !prompt.isEmpty { return false }
+            if let index = historyIndex {
+                if index > 0 {
+                    recallHistory(at: index - 1)
+                }
+                return true
+            }
+            guard !history.isEmpty else {
+                isNavigatingTabs = !sessions.sessions.isEmpty
+                cycleActiveSessions(by: -1)
+                return true
+            }
+            recallHistory(at: history.count - 1)
+            return true
+        } else {
+            if let index = historyIndex {
+                if index + 1 < history.count {
+                    recallHistory(at: index + 1)
+                } else {
+                    // Past the newest entry → back to a fresh prompt; the
+                    // next ↓ moves into the tab list below.
+                    historyIndex = nil
+                    prompt = ""
+                }
+                return true
+            }
+            if !prompt.isEmpty { return false }
+            isNavigatingTabs = !sessions.sessions.isEmpty
+            cycleActiveSessions(by: 1)
+            return true
+        }
+    }
 
     private func recallHistory(at index: Int) {
         let history = settings.promptHistory
@@ -1458,9 +1909,7 @@ struct LauncherView: View {
         let nextIndex = ((currentIndex + delta) % count + count) % count
         let next = list[nextIndex]
         selectedSessionID = next.id
-        if next.hostedInFastqTerminal {
-            launcher.selectTerminalTab(next.id)
-        }
+        launcher.selectTerminalTab(next.id)
     }
 
     private func removeKeyMonitors() {
@@ -1468,7 +1917,6 @@ struct LauncherView: View {
             NSEvent.removeMonitor(pasteMonitor)
             self.pasteMonitor = nil
         }
-        LauncherKeyRouter.shared.handleArrowKey = nil
     }
 
     // MARK: - @ file mentions
@@ -1543,7 +1991,6 @@ struct LauncherView: View {
 private struct SessionRow: View {
     let session: AgentSession
     let isSelected: Bool
-    var isListFocused: Bool = false
     let onSelect: () -> Void
     let onFocus: () -> Void
     let onQuit: () -> Void
@@ -1551,9 +1998,9 @@ private struct SessionRow: View {
     var body: some View {
         HStack(spacing: 12) {
             ZStack {
-                RoundedRectangle(cornerRadius: LauncherMetrics.rowIconCornerRadius, style: .continuous)
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(Color.white.opacity(0.08))
-                    .frame(width: LauncherMetrics.rowIconSize, height: LauncherMetrics.rowIconSize)
+                    .frame(width: 34, height: 34)
                 AgentBrandIcon(kind: session.tool, size: 16)
             }
 
@@ -1569,6 +2016,10 @@ private struct SessionRow: View {
 
             Spacer()
 
+            Text(session.status == .launching ? "Launching" : "Running")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+
             Button(action: onQuit) {
                 Image(systemName: "xmark")
                     .font(.system(size: 11, weight: .semibold))
@@ -1578,28 +2029,16 @@ private struct SessionRow: View {
             }
             .buttonStyle(.plain)
             .help("Quit this agent window")
-            .accessibilityLabel("Quit \(session.title)")
         }
-        .padding(.horizontal, LauncherMetrics.rowPaddingH)
-        .padding(.vertical, LauncherMetrics.rowPaddingV)
-        .frame(minHeight: LauncherMetrics.rowMinHeight)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
         .background(
-            RoundedRectangle(cornerRadius: LauncherMetrics.rowCornerRadius, style: .continuous)
-                .fill(isListFocused
-                      ? Color.accentColor.opacity(0.22)
-                      : (isSelected ? Color.white.opacity(0.10) : Color.clear))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: LauncherMetrics.rowCornerRadius, style: .continuous)
-                .strokeBorder(Color.accentColor.opacity(isListFocused ? 0.85 : 0), lineWidth: 1.5)
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(isSelected ? Color.white.opacity(0.10) : Color.clear)
         )
         .contentShape(Rectangle())
         .onTapGesture(count: 2, perform: onFocus)
         .onTapGesture(perform: onSelect)
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(isSelected || isListFocused ? .isSelected : [])
-        .accessibilityLabel("\(session.title), \(session.subtitle)")
-        .accessibilityHint("Return to open, Delete to quit")
     }
 }
 
@@ -1619,14 +2058,14 @@ private struct ChipLabel: View {
     var body: some View {
         HStack(spacing: 5) {
             if let brand {
-                AgentBrandIcon(kind: brand, size: LauncherMetrics.chipIconSize)
+                AgentBrandIcon(kind: brand, size: 10)
             } else if let systemIcon {
                 Image(systemName: systemIcon)
-                    .font(.system(size: LauncherMetrics.chipIconSize, weight: .semibold))
+                    .font(.system(size: 10, weight: .semibold))
                     .opacity(0.8)
             }
             Text(title)
-                .font(.system(size: LauncherMetrics.chipFontSize, weight: .medium))
+                .font(.system(size: 11.5, weight: .medium))
                 .lineLimit(1)
             Image(systemName: "chevron.down")
                 .font(.system(size: 7.5, weight: .semibold))
@@ -1634,8 +2073,8 @@ private struct ChipLabel: View {
                 .opacity(0.55)
         }
         .foregroundStyle(.primary.opacity(0.85))
-        .padding(.horizontal, LauncherMetrics.chipPaddingH)
-        .padding(.vertical, LauncherMetrics.chipPaddingV)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4.5)
         // Quiet by default — a pill background only while its menu is open.
         .background(Color.white.opacity(isActive ? 0.13 : 0), in: Capsule())
         .overlay(
@@ -1657,6 +2096,10 @@ private struct LauncherPanelSizeKey: PreferenceKey {
 extension Notification.Name {
     /// SwiftUI content size changed — the panel resizes to fit (top-anchored).
     static let fastqLauncherPanelSizeChanged = Notification.Name("fastq.launcherPanelSizeChanged")
+    /// Open the in-launcher interactive terminal for a session (object: UUID?).
+    static let fastqOpenSessionPreview = Notification.Name("fastq.openSessionPreview")
+    /// ⌘T — ensure a shell session and open the launcher preview.
+    static let fastqOpenShellPreview = Notification.Name("fastq.openShellPreview")
 }
 
 /// Accent ring shown on the chip currently reachable via Tab.
@@ -1676,13 +2119,10 @@ private struct KeyCap: View {
 
     var body: some View {
         Text(symbol)
-            .font(.system(size: LauncherMetrics.keyCapFontSize, weight: .semibold))
-            .padding(.horizontal, LauncherMetrics.keyCapPaddingH)
-            .padding(.vertical, LauncherMetrics.keyCapPaddingV)
-            .background(
-                Color.white.opacity(0.08),
-                in: RoundedRectangle(cornerRadius: LauncherMetrics.keyCapCornerRadius, style: .continuous)
-            )
+            .font(.system(size: 11, weight: .semibold))
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
             .foregroundStyle(.secondary)
     }
 }
@@ -1696,16 +2136,13 @@ private struct FooterAction: View {
         Button(action: action) {
             HStack(spacing: 6) {
                 Text(title)
-                    .font(.system(size: LauncherMetrics.footerFontSize, weight: .medium))
+                    .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(.secondary)
                 Text(key)
-                    .font(.system(size: LauncherMetrics.keyCapFontSize, weight: .semibold, design: .rounded))
-                    .padding(.horizontal, LauncherMetrics.keyCapPaddingH)
-                    .padding(.vertical, LauncherMetrics.keyCapPaddingV)
-                    .background(
-                        Color.white.opacity(0.08),
-                        in: RoundedRectangle(cornerRadius: LauncherMetrics.keyCapCornerRadius, style: .continuous)
-                    )
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 2)
+                    .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
                     .foregroundStyle(.secondary)
             }
         }
@@ -1716,7 +2153,7 @@ private struct FooterAction: View {
 private struct LauncherBackground: View {
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: LauncherMetrics.cornerRadius, style: .continuous)
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .fill(.ultraThinMaterial)
             LinearGradient(
                 colors: [
@@ -1762,183 +2199,5 @@ private struct VoiceWaveform: View {
         let offsets: [Float] = [0.35, 0.7, 1.0, 0.7, 0.35]
         let h = 4 + CGFloat(level * offsets[index]) * 14
         return max(4, min(18, h))
-    }
-}
-
-// MARK: - Arrow navigation (Binding-safe)
-
-/// Raycast-style ↑/↓ for the launcher. Uses `Binding`s so NSEvent / text-view
-/// callbacks update SwiftUI state reliably (View struct copies cannot).
-@MainActor
-private func navigateLauncherArrows(
-    up: Bool,
-    mode: LauncherMode,
-    isNavigatingTabs: Binding<Bool>,
-    selectedSessionID: Binding<UUID?>,
-    historyIndex: Binding<Int?>,
-    prompt: Binding<String>,
-    sessions: SessionStore,
-    settings: AppSettings,
-    launcher: AgentLauncher
-) -> Bool {
-    let list = sessions.sessions
-    let canUseSessionList = mode == .agent && !list.isEmpty
-
-    // Already in Active Windows: move selection (or exit to prompt on ↑ at top).
-    if isNavigatingTabs.wrappedValue, canUseSessionList {
-        if up {
-            if selectedSessionID.wrappedValue == list.first?.id {
-                isNavigatingTabs.wrappedValue = false
-                return true
-            }
-            cycleSessionSelection(
-                by: -1,
-                selectedSessionID: selectedSessionID,
-                sessions: sessions,
-                launcher: launcher
-            )
-            return true
-        } else {
-            cycleSessionSelection(
-                by: 1,
-                selectedSessionID: selectedSessionID,
-                sessions: sessions,
-                launcher: launcher
-            )
-            return true
-        }
-    }
-
-    let history = settings.promptHistory
-
-    if up {
-        // Prompt history (shell-style) when not in the session list.
-        if historyIndex.wrappedValue == nil, !prompt.wrappedValue.isEmpty {
-            return false
-        }
-        if let index = historyIndex.wrappedValue {
-            if index > 0 {
-                recallPromptHistory(
-                    at: index - 1,
-                    historyIndex: historyIndex,
-                    prompt: prompt,
-                    isNavigatingTabs: isNavigatingTabs,
-                    settings: settings
-                )
-            }
-            return true
-        }
-        if !history.isEmpty {
-            recallPromptHistory(
-                at: history.count - 1,
-                historyIndex: historyIndex,
-                prompt: prompt,
-                isNavigatingTabs: isNavigatingTabs,
-                settings: settings
-            )
-            return true
-        }
-        // No history — enter session list from the bottom.
-        guard canUseSessionList else { return false }
-        enterSessionList(
-            preferred: list.last?.id,
-            isNavigatingTabs: isNavigatingTabs,
-            selectedSessionID: selectedSessionID,
-            historyIndex: historyIndex,
-            sessions: sessions,
-            launcher: launcher
-        )
-        return true
-    }
-
-    // ↓ — leave history first, then enter / stay in Active Windows.
-    if let index = historyIndex.wrappedValue {
-        if index + 1 < history.count {
-            recallPromptHistory(
-                at: index + 1,
-                historyIndex: historyIndex,
-                prompt: prompt,
-                isNavigatingTabs: isNavigatingTabs,
-                settings: settings
-            )
-        } else {
-            historyIndex.wrappedValue = nil
-            prompt.wrappedValue = ""
-        }
-        return true
-    }
-
-    // Raycast model: ↓ enters the results list even if the prompt has text.
-    guard canUseSessionList else { return false }
-    enterSessionList(
-        preferred: selectedSessionID.wrappedValue ?? list.first?.id,
-        isNavigatingTabs: isNavigatingTabs,
-        selectedSessionID: selectedSessionID,
-        historyIndex: historyIndex,
-        sessions: sessions,
-        launcher: launcher
-    )
-    return true
-}
-
-@MainActor
-private func enterSessionList(
-    preferred: UUID?,
-    isNavigatingTabs: Binding<Bool>,
-    selectedSessionID: Binding<UUID?>,
-    historyIndex: Binding<Int?>,
-    sessions: SessionStore,
-    launcher: AgentLauncher
-) {
-    historyIndex.wrappedValue = nil
-    isNavigatingTabs.wrappedValue = true
-    let list = sessions.sessions
-    let id = preferred.flatMap { pid in list.contains(where: { $0.id == pid }) ? pid : nil }
-        ?? list.first?.id
-    selectedSessionID.wrappedValue = id
-    if let id, let session = list.first(where: { $0.id == id }), session.hostedInFastqTerminal {
-        launcher.selectTerminalTab(id)
-    }
-}
-
-@MainActor
-private func cycleSessionSelection(
-    by delta: Int,
-    selectedSessionID: Binding<UUID?>,
-    sessions: SessionStore,
-    launcher: AgentLauncher
-) {
-    let list = sessions.sessions
-    guard !list.isEmpty else { return }
-    let currentIndex = list.firstIndex(where: { $0.id == selectedSessionID.wrappedValue }) ?? 0
-    let count = list.count
-    let nextIndex = ((currentIndex + delta) % count + count) % count
-    let next = list[nextIndex]
-    selectedSessionID.wrappedValue = next.id
-    if next.hostedInFastqTerminal {
-        launcher.selectTerminalTab(next.id)
-    }
-}
-
-@MainActor
-private func recallPromptHistory(
-    at index: Int,
-    historyIndex: Binding<Int?>,
-    prompt: Binding<String>,
-    isNavigatingTabs: Binding<Bool>,
-    settings: AppSettings
-) {
-    let history = settings.promptHistory
-    guard history.indices.contains(index) else { return }
-    isNavigatingTabs.wrappedValue = false
-    historyIndex.wrappedValue = index
-    prompt.wrappedValue = history[index]
-    let caret = history[index].utf16.count
-    DispatchQueue.main.async {
-        NotificationCenter.default.post(
-            name: .fastqFocusLauncherPrompt,
-            object: nil,
-            userInfo: ["caret": caret]
-        )
     }
 }

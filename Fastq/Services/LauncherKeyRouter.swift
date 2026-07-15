@@ -8,8 +8,10 @@ final class LauncherKeyRouter {
     var isLauncherVisible = false
     var isProjectPickerOpen = false
     var isMentionPopupOpen = false
+    var isSessionPreviewOpen = false
 
     var closePicker: (() -> Void)?
+    var closeSessionPreview: (() -> Void)?
     var closeMentionPopup: (() -> Void)?
     var onDismissLauncher: (() -> Void)?
     var onEscape: (() -> Void)?

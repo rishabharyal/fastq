@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import AppKit
+import GhosttyTerminal
 
 struct TerminalWorkspace: Identifiable, Hashable {
     var id: String { path }
@@ -180,6 +181,18 @@ final class TerminalSessionStore: ObservableObject {
         sessions.first { $0.id == id }?.write(text)
     }
 
+    func sendInput(_ id: UUID, data: Data) {
+        sessions.first { $0.id == id }?.write(data: data)
+    }
+
+    func mirrorAttach(_ id: UUID) -> MirrorAttachInfo? {
+        sessions.first { $0.id == id }?.mirrorAttachInfo()
+    }
+
+    func mirrorChunk(_ id: UUID, since cursor: UInt64) -> MirrorChunkInfo? {
+        sessions.first { $0.id == id }?.mirrorChunk(since: cursor)
+    }
+
     func infos() -> [SessionInfo] {
         sessions.map(\.info)
     }
@@ -264,8 +277,18 @@ final class TerminalSession: Identifiable, ObservableObject {
     /// Shell-like tabs close with their process; agent tabs fall back to a shell.
     var closesOnExit: Bool { isShell || isFallbackShell }
 
-    /// Raw PTY bytes for the emulator view; buffers until the view attaches.
+    /// Raw PTY bytes for the emulator view; journals history for mirrors.
     private let output = TerminalOutputBridge()
+
+    /// The Ghostty in-memory session rendering this PTY, set by the host
+    /// view's coordinator while attached.
+    weak var ghosttyMirror: InMemoryTerminalSession?
+
+    /// Last known grid — mirrors size themselves to match so TUIs line up.
+    private(set) var gridCols: UInt16 = 120
+    private(set) var gridRows: UInt16 = 36
+    private(set) var cellWidth: Double = 8
+    private(set) var cellHeight: Double = 17
 
     private let pty = PTYProcess()
     /// For the Ghostty IO bridge: captured on the main actor, written from IO threads.
@@ -273,6 +296,7 @@ final class TerminalSession: Identifiable, ObservableObject {
     private var didLaunch = false
     private var launchFallbackWork: DispatchWorkItem?
     private var resizeDebounceWork: DispatchWorkItem?
+    private var primaryOutputToken: UUID?
     var onExit: (() -> Void)?
 
     var info: SessionInfo {
@@ -483,13 +507,55 @@ final class TerminalSession: Identifiable, ObservableObject {
         statusLine = "Terminal"
     }
 
-    /// Drain any buffered PTY output into the attached emulator.
-    func attachOutputHandler(_ handler: @escaping (Data) -> Void) {
-        output.attach(handler)
+    func updateGridMetrics(cols: UInt16, rows: UInt16, cellWidth: Double? = nil, cellHeight: Double? = nil) {
+        gridCols = max(cols, 1)
+        gridRows = max(rows, 1)
+        if let cellWidth, cellWidth > 0 { self.cellWidth = cellWidth }
+        if let cellHeight, cellHeight > 0 { self.cellHeight = cellHeight }
     }
 
-    func detachOutputHandler() {
-        output.detach()
+    /// Drain any buffered PTY output into the attached emulator.
+    @discardableResult
+    func attachOutputHandler(_ handler: @escaping (Data) -> Void) -> UUID {
+        let token = output.subscribe(handler)
+        primaryOutputToken = token
+        return token
+    }
+
+    func detachOutputHandler(_ token: UUID? = nil) {
+        let id = token ?? primaryOutputToken
+        if let id {
+            output.unsubscribe(id)
+        }
+        if token == nil || token == primaryOutputToken {
+            primaryOutputToken = nil
+        }
+    }
+
+    func mirrorAttachInfo() -> MirrorAttachInfo {
+        let snap = output.snapshot()
+        return MirrorAttachInfo(
+            sessionID: id,
+            projectPath: projectPath,
+            history: snap.data,
+            cursor: snap.cursor,
+            cols: gridCols,
+            rows: gridRows,
+            cellWidth: cellWidth,
+            cellHeight: cellHeight
+        )
+    }
+
+    func mirrorChunk(since cursor: UInt64) -> MirrorChunkInfo {
+        let chunk = output.chunk(since: cursor)
+        return MirrorChunkInfo(
+            sessionID: id,
+            data: chunk.data,
+            cursor: chunk.cursor,
+            cols: gridCols,
+            rows: gridRows,
+            reset: chunk.reset
+        )
     }
 
     func write(_ text: String) {
@@ -498,6 +564,10 @@ final class TerminalSession: Identifiable, ObservableObject {
 
     func write(bytes: [UInt8]) {
         pty.write(Data(bytes))
+    }
+
+    func write(data: Data) {
+        pty.write(data)
     }
 
     func resize(cols: UInt16, rows: UInt16) {
@@ -532,39 +602,89 @@ final class TerminalSession: Identifiable, ObservableObject {
     }
 }
 
-/// Thread-safe PTY→emulator hand-off. `emit` is called on the PTY read
-/// queue; the attached handler (Ghostty's `receive`) parses on its own
-/// serial queue, so terminal output never touches the main thread.
+/// Thread-safe PTY→emulator journal. Keeps a rolling history so launcher
+/// mirrors can rebuild the same VT state, and fans out live bytes to every
+/// attached Ghostty surface.
 final class TerminalOutputBridge: @unchecked Sendable {
     private let lock = NSLock()
-    private var handler: ((Data) -> Void)?
-    private var pending = Data()
+    private var handlers: [UUID: (Data) -> Void] = [:]
+    private var journal = Data()
+    /// Absolute cursor of `journal.startIndex` (increases when we truncate).
+    private var startCursor: UInt64 = 0
+    private let maxJournalBytes = 4 * 1024 * 1024
+
+    private var endCursor: UInt64 { startCursor + UInt64(journal.count) }
 
     func emit(_ data: Data) {
+        guard !data.isEmpty else { return }
         lock.lock()
-        guard let handler else {
-            pending.append(data)
-            lock.unlock()
-            return
-        }
+        journal.append(data)
+        truncateIfNeeded()
+        let handlers = Array(self.handlers.values)
         lock.unlock()
-        handler(data)
-    }
-
-    func attach(_ newHandler: @escaping (Data) -> Void) {
-        lock.lock()
-        handler = newHandler
-        let buffered = pending
-        pending = Data()
-        lock.unlock()
-        if !buffered.isEmpty {
-            newHandler(buffered)
+        for handler in handlers {
+            handler(data)
         }
     }
 
-    func detach() {
+    /// Replay current journal, then receive live bytes. Safe against races.
+    func subscribe(_ handler: @escaping (Data) -> Void) -> UUID {
         lock.lock()
-        handler = nil
+        let id = UUID()
+        let replay = journal
+        let cursorAfterReplay = endCursor
         lock.unlock()
+
+        if !replay.isEmpty {
+            handler(replay)
+        }
+
+        lock.lock()
+        let catchup: Data
+        if cursorAfterReplay < startCursor {
+            catchup = journal
+        } else {
+            let offset = Int(cursorAfterReplay - startCursor)
+            catchup = offset < journal.count ? journal.subdata(in: offset..<journal.count) : Data()
+        }
+        handlers[id] = handler
+        lock.unlock()
+
+        if !catchup.isEmpty {
+            handler(catchup)
+        }
+        return id
+    }
+
+    func unsubscribe(_ id: UUID) {
+        lock.lock()
+        handlers.removeValue(forKey: id)
+        lock.unlock()
+    }
+
+    func snapshot() -> (data: Data, cursor: UInt64) {
+        lock.lock()
+        defer { lock.unlock() }
+        return (journal, endCursor)
+    }
+
+    func chunk(since cursor: UInt64) -> (data: Data, cursor: UInt64, reset: Bool) {
+        lock.lock()
+        defer { lock.unlock() }
+        if cursor < startCursor {
+            return (journal, endCursor, true)
+        }
+        let offset = Int(cursor - startCursor)
+        guard offset < journal.count else {
+            return (Data(), endCursor, false)
+        }
+        return (journal.subdata(in: offset..<journal.count), endCursor, false)
+    }
+
+    private func truncateIfNeeded() {
+        guard journal.count > maxJournalBytes else { return }
+        let overflow = journal.count - maxJournalBytes
+        journal.removeSubrange(0..<overflow)
+        startCursor += UInt64(overflow)
     }
 }

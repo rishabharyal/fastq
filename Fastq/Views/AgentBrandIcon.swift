@@ -25,6 +25,7 @@ extension AgentToolKind {
         case .codexCLI: return "AgentCodex"
         case .grokAgent: return "AgentGrok"
         case .openCode: return "AgentOpenCode"
+        case .shell: return nil
         }
     }
 
@@ -35,6 +36,7 @@ extension AgentToolKind {
         case .codexCLI: return Color(red: 0.45, green: 0.78, blue: 0.55)
         case .grokAgent: return Color(red: 0.95, green: 0.95, blue: 0.95)
         case .openCode: return Color(red: 0.45, green: 0.65, blue: 0.95)
+        case .shell: return Color(red: 0.55, green: 0.72, blue: 0.95)
         }
     }
 }

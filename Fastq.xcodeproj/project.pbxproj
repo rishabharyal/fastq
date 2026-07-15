@@ -3,10 +3,17 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 60;
+	objectVersion = 56;
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A10000000000000000000060 /* ChatRichContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000060 /* ChatRichContent.swift */; };
+		A10000000000000000000061 /* katex in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000061 /* katex */; };
+		A10000000000000000000050 /* PTYProcess.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000050 /* PTYProcess.swift */; };
+		A10000000000000000000051 /* PTYHelper.c in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000051 /* PTYHelper.c */; };
+		A10000000000000000000052 /* TerminalSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000052 /* TerminalSession.swift */; };
+		A10000000000000000000053 /* CreateSessionRequest.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000053 /* CreateSessionRequest.swift */; };
+		A10000000000000000000054 /* GhosttyTerminalHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000054 /* GhosttyTerminalHost.swift */; };
 		A10000000000000000000001 /* FastqApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000001 /* FastqApp.swift */; };
 		A10000000000000000000002 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000002 /* Models.swift */; };
 		A10000000000000000000003 /* AppSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000003 /* AppSettings.swift */; };
@@ -25,8 +32,10 @@
 		A10000000000000000000011 /* ProjectPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000013 /* ProjectPickerView.swift */; };
 		A10000000000000000000012 /* PermissionsHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000014 /* PermissionsHelper.swift */; };
 		A10000000000000000000013 /* LauncherKeyRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000015 /* LauncherKeyRouter.swift */; };
-		A10000000000000000000014 /* FastqIPC.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000016 /* FastqIPC.swift */; };
-		A10000000000000000000015 /* FastqTerminalClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000017 /* FastqTerminalClient.swift */; };
+		A10000000000000000000032 /* FastqTerminalChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000032 /* FastqTerminalChrome.swift */; };
+						A10000000000000000000040 /* GhosttyTerminal in Frameworks */ = {isa = PBXBuildFile; productRef = A20000000000000000000040 /* GhosttyTerminal */; };
+		A10000000000000000000041 /* GhosttyTheme in Frameworks */ = {isa = PBXBuildFile; productRef = A20000000000000000000041 /* GhosttyTheme */; };
+		A10000000000000000000043 /* MSDisplayLink in Frameworks */ = {isa = PBXBuildFile; productRef = A20000000000000000000043 /* MSDisplayLink */; };
 		A10000000000000000000016 /* FolderPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000018 /* FolderPicker.swift */; };
 		A10000000000000000000017 /* SettingsWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000019 /* SettingsWindowController.swift */; };
 		A10000000000000000000018 /* HotkeyShortcut.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000001A /* HotkeyShortcut.swift */; };
@@ -36,30 +45,29 @@
 		A1000000000000000000001C /* FileMentionIndex.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000001E /* FileMentionIndex.swift */; };
 		A1000000000000000000001D /* VoiceDictationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000001F /* VoiceDictationService.swift */; };
 		A1000000000000000000001F /* WhisperCPPTranscriber.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000022 /* WhisperCPPTranscriber.swift */; };
-		A10000000000000000000020 /* whisper.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = A20000000000000000000023 /* whisper.xcframework */; };
-		A10000000000000000000021 /* whisper.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = A20000000000000000000023 /* whisper.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		A10000000000000000000030 /* ChatService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000030 /* ChatService.swift */; };
 		A10000000000000000000031 /* ChatModeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000031 /* ChatModeView.swift */; };
-		A10000000000000000000032 /* LauncherMetrics.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000032 /* LauncherMetrics.swift */; };
-		A10000000000000000000033 /* AgentActivityRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000033 /* AgentActivityRegistry.swift */; };
-		A10000000000000000000034 /* ClaudeCodeActivityAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000034 /* ClaudeCodeActivityAdapter.swift */; };
+		A10000000000000000000033 /* ChatHistoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000033 /* ChatHistoryStore.swift */; };
+		A10000000000000000000070 /* FastplayModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000070 /* FastplayModels.swift */; };
+		A10000000000000000000071 /* FastplayAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000071 /* FastplayAPIClient.swift */; };
+		A10000000000000000000072 /* FastplayAuthStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000072 /* FastplayAuthStore.swift */; };
+		A10000000000000000000073 /* BoardStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000073 /* BoardStore.swift */; };
+		A10000000000000000000074 /* BoardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000074 /* BoardView.swift */; };
+		A10000000000000000000075 /* BoardWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000075 /* BoardWindowController.swift */; };
+		A10000000000000000000076 /* BoardModeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000076 /* BoardModeView.swift */; };
+		A10000000000000000000020 /* whisper.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = A20000000000000000000023 /* whisper.xcframework */; };
+		A10000000000000000000021 /* whisper.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = A20000000000000000000023 /* whisper.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
-/* Begin PBXCopyFilesBuildPhase section */
-		A60000000000000000000003 /* Embed Frameworks */ = {
-			isa = PBXCopyFilesBuildPhase;
-			buildActionMask = 2147483647;
-			dstPath = "";
-			dstSubfolderSpec = 10;
-			files = (
-				A10000000000000000000021 /* whisper.xcframework in Embed Frameworks */,
-			);
-			name = "Embed Frameworks";
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-/* End PBXCopyFilesBuildPhase section */
-
 /* Begin PBXFileReference section */
+		A20000000000000000000060 /* ChatRichContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatRichContent.swift; sourceTree = "<group>"; };
+		A20000000000000000000061 /* katex */ = {isa = PBXFileReference; lastKnownFileType = folder; name = katex; path = Resources/katex; sourceTree = "<group>"; };
+		A20000000000000000000050 /* PTYProcess.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PTYProcess.swift; sourceTree = "<group>"; };
+		A20000000000000000000051 /* PTYHelper.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = PTYHelper.c; sourceTree = "<group>"; };
+		A20000000000000000000052 /* TerminalSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalSession.swift; sourceTree = "<group>"; };
+		A20000000000000000000053 /* CreateSessionRequest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateSessionRequest.swift; sourceTree = "<group>"; };
+		A20000000000000000000054 /* GhosttyTerminalHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyTerminalHost.swift; sourceTree = "<group>"; };
+		A20000000000000000000055 /* Fastq-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "Fastq-Bridging-Header.h"; sourceTree = "<group>"; };
 		A20000000000000000000001 /* FastqApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FastqApp.swift; sourceTree = "<group>"; };
 		A20000000000000000000002 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		A20000000000000000000003 /* AppSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettings.swift; sourceTree = "<group>"; };
@@ -81,8 +89,7 @@
 		A20000000000000000000013 /* ProjectPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectPickerView.swift; sourceTree = "<group>"; };
 		A20000000000000000000014 /* PermissionsHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionsHelper.swift; sourceTree = "<group>"; };
 		A20000000000000000000015 /* LauncherKeyRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LauncherKeyRouter.swift; sourceTree = "<group>"; };
-		A20000000000000000000016 /* FastqIPC.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FastqIPC.swift; sourceTree = "<group>"; };
-		A20000000000000000000017 /* FastqTerminalClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FastqTerminalClient.swift; sourceTree = "<group>"; };
+		A20000000000000000000032 /* FastqTerminalChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FastqTerminalChrome.swift; sourceTree = "<group>"; };
 		A20000000000000000000018 /* FolderPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolderPicker.swift; sourceTree = "<group>"; };
 		A20000000000000000000019 /* SettingsWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsWindowController.swift; sourceTree = "<group>"; };
 		A2000000000000000000001A /* HotkeyShortcut.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotkeyShortcut.swift; sourceTree = "<group>"; };
@@ -92,12 +99,17 @@
 		A2000000000000000000001E /* FileMentionIndex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileMentionIndex.swift; sourceTree = "<group>"; };
 		A2000000000000000000001F /* VoiceDictationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceDictationService.swift; sourceTree = "<group>"; };
 		A20000000000000000000022 /* WhisperCPPTranscriber.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperCPPTranscriber.swift; sourceTree = "<group>"; };
-		A20000000000000000000023 /* whisper.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = whisper.xcframework; path = Fastq/Vendor/whisper.xcframework; sourceTree = SOURCE_ROOT; };
 		A20000000000000000000030 /* ChatService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatService.swift; sourceTree = "<group>"; };
 		A20000000000000000000031 /* ChatModeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatModeView.swift; sourceTree = "<group>"; };
-		A20000000000000000000032 /* LauncherMetrics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LauncherMetrics.swift; sourceTree = "<group>"; };
-		A20000000000000000000033 /* AgentActivityRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentActivityRegistry.swift; sourceTree = "<group>"; };
-		A20000000000000000000034 /* ClaudeCodeActivityAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeCodeActivityAdapter.swift; sourceTree = "<group>"; };
+		A20000000000000000000033 /* ChatHistoryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatHistoryStore.swift; sourceTree = "<group>"; };
+		A20000000000000000000070 /* FastplayModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FastplayModels.swift; sourceTree = "<group>"; };
+		A20000000000000000000071 /* FastplayAPIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FastplayAPIClient.swift; sourceTree = "<group>"; };
+		A20000000000000000000072 /* FastplayAuthStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FastplayAuthStore.swift; sourceTree = "<group>"; };
+		A20000000000000000000073 /* BoardStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardStore.swift; sourceTree = "<group>"; };
+		A20000000000000000000074 /* BoardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardView.swift; sourceTree = "<group>"; };
+		A20000000000000000000075 /* BoardWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardWindowController.swift; sourceTree = "<group>"; };
+		A20000000000000000000076 /* BoardModeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardModeView.swift; sourceTree = "<group>"; };
+		A20000000000000000000023 /* whisper.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = whisper.xcframework; path = Fastq/Vendor/whisper.xcframework; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -107,12 +119,26 @@
 			files = (
 				A1000000000000000000000B /* Carbon.framework in Frameworks */,
 				A10000000000000000000020 /* whisper.xcframework in Frameworks */,
+				A10000000000000000000040 /* GhosttyTerminal in Frameworks */,
+				A10000000000000000000041 /* GhosttyTheme in Frameworks */,
+				A10000000000000000000043 /* MSDisplayLink in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		A4000000000000000000000A /* Terminal */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000050 /* PTYProcess.swift */,
+				A20000000000000000000051 /* PTYHelper.c */,
+				A20000000000000000000052 /* TerminalSession.swift */,
+				A20000000000000000000053 /* CreateSessionRequest.swift */,
+			);
+			path = Terminal;
+			sourceTree = "<group>";
+		};
 		A40000000000000000000001 = {
 			isa = PBXGroup;
 			children = (
@@ -131,9 +157,12 @@
 				A40000000000000000000004 /* Services */,
 				A40000000000000000000005 /* Controllers */,
 				A40000000000000000000006 /* Views */,
+				A4000000000000000000000A /* Terminal */,
 				A2000000000000000000000A /* Assets.xcassets */,
+				A20000000000000000000061 /* katex */,
 				A2000000000000000000000C /* Info.plist */,
 				A2000000000000000000000E /* Fastq.entitlements */,
+				A20000000000000000000055 /* Fastq-Bridging-Header.h */,
 			);
 			path = Fastq;
 			sourceTree = "<group>";
@@ -158,24 +187,26 @@
 				A20000000000000000000010 /* ToolPathDetector.swift */,
 				A20000000000000000000014 /* PermissionsHelper.swift */,
 				A20000000000000000000015 /* LauncherKeyRouter.swift */,
-				A20000000000000000000017 /* FastqTerminalClient.swift */,
 				A20000000000000000000018 /* FolderPicker.swift */,
 				A2000000000000000000001E /* FileMentionIndex.swift */,
 				A2000000000000000000001F /* VoiceDictationService.swift */,
 				A20000000000000000000022 /* WhisperCPPTranscriber.swift */,
 				A20000000000000000000030 /* ChatService.swift */,
-				A4000000000000000000000A /* AgentActivity */,
+				A20000000000000000000033 /* ChatHistoryStore.swift */,
+				A40000000000000000000070 /* Fastplay */,
 			);
 			path = Services;
 			sourceTree = "<group>";
 		};
-		A4000000000000000000000A /* AgentActivity */ = {
+		A40000000000000000000070 /* Fastplay */ = {
 			isa = PBXGroup;
 			children = (
-				A20000000000000000000033 /* AgentActivityRegistry.swift */,
-				A20000000000000000000034 /* ClaudeCodeActivityAdapter.swift */,
+				A20000000000000000000070 /* FastplayModels.swift */,
+				A20000000000000000000071 /* FastplayAPIClient.swift */,
+				A20000000000000000000072 /* FastplayAuthStore.swift */,
+				A20000000000000000000073 /* BoardStore.swift */,
 			);
-			path = AgentActivity;
+			path = Fastplay;
 			sourceTree = "<group>";
 		};
 		A40000000000000000000005 /* Controllers */ = {
@@ -184,6 +215,7 @@
 				A20000000000000000000007 /* LauncherPanelController.swift */,
 				A20000000000000000000012 /* OnboardingWindowController.swift */,
 				A20000000000000000000019 /* SettingsWindowController.swift */,
+				A20000000000000000000075 /* BoardWindowController.swift */,
 			);
 			path = Controllers;
 			sourceTree = "<group>";
@@ -192,7 +224,8 @@
 			isa = PBXGroup;
 			children = (
 				A20000000000000000000008 /* LauncherView.swift */,
-				A20000000000000000000032 /* LauncherMetrics.swift */,
+				A20000000000000000000060 /* ChatRichContent.swift */,
+				A20000000000000000000054 /* GhosttyTerminalHost.swift */,
 				A20000000000000000000009 /* SettingsView.swift */,
 				A20000000000000000000011 /* OnboardingView.swift */,
 				A20000000000000000000013 /* ProjectPickerView.swift */,
@@ -200,6 +233,8 @@
 				A2000000000000000000001C /* PromptEditor.swift */,
 				A2000000000000000000001D /* AgentBrandIcon.swift */,
 				A20000000000000000000031 /* ChatModeView.swift */,
+				A20000000000000000000074 /* BoardView.swift */,
+				A20000000000000000000076 /* BoardModeView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -213,20 +248,21 @@
 			name = Frameworks;
 			sourceTree = "<group>";
 		};
+		A40000000000000000000009 /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000032 /* FastqTerminalChrome.swift */,
+			);
+			name = Shared;
+			path = Shared;
+			sourceTree = "<group>";
+		};
 		A40000000000000000000008 /* Products */ = {
 			isa = PBXGroup;
 			children = (
 				A2000000000000000000000D /* Fastq.app */,
 			);
 			name = Products;
-			sourceTree = "<group>";
-		};
-		A40000000000000000000009 /* Shared */ = {
-			isa = PBXGroup;
-			children = (
-				A20000000000000000000016 /* FastqIPC.swift */,
-			);
-			path = Shared;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -246,6 +282,11 @@
 			dependencies = (
 			);
 			name = Fastq;
+			packageProductDependencies = (
+				A20000000000000000000040 /* GhosttyTerminal */,
+				A20000000000000000000041 /* GhosttyTheme */,
+				A20000000000000000000043 /* MSDisplayLink */,
+			);
 			productName = Fastq;
 			productReference = A2000000000000000000000D /* Fastq.app */;
 			productType = "com.apple.product-type.application";
@@ -258,7 +299,7 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 1600;
-				LastUpgradeCheck = 2660;
+				LastUpgradeCheck = 1600;
 				TargetAttributes = {
 					A50000000000000000000001 = {
 						CreatedOnToolsVersion = 16.0;
@@ -274,6 +315,10 @@
 				Base,
 			);
 			mainGroup = A40000000000000000000001;
+			packageReferences = (
+				A20000000000000000000042 /* XCRemoteSwiftPackageReference "libghostty-spm" */,
+				A20000000000000000000044 /* XCRemoteSwiftPackageReference "MSDisplayLink" */,
+			);
 			productRefGroup = A40000000000000000000008 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -283,12 +328,27 @@
 		};
 /* End PBXProject section */
 
+/* Begin PBXCopyFilesBuildPhase section */
+		A60000000000000000000003 /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+				A10000000000000000000021 /* whisper.xcframework in Embed Frameworks */,
+			);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXResourcesBuildPhase section */
 		A60000000000000000000002 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 				A1000000000000000000000A /* Assets.xcassets in Resources */,
+				A10000000000000000000061 /* katex in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -315,8 +375,12 @@
 				A10000000000000000000011 /* ProjectPickerView.swift in Sources */,
 				A10000000000000000000012 /* PermissionsHelper.swift in Sources */,
 				A10000000000000000000013 /* LauncherKeyRouter.swift in Sources */,
-				A10000000000000000000014 /* FastqIPC.swift in Sources */,
-				A10000000000000000000015 /* FastqTerminalClient.swift in Sources */,
+				A10000000000000000000032 /* FastqTerminalChrome.swift in Sources */,
+				A10000000000000000000050 /* PTYProcess.swift in Sources */,
+				A10000000000000000000051 /* PTYHelper.c in Sources */,
+				A10000000000000000000052 /* TerminalSession.swift in Sources */,
+				A10000000000000000000053 /* CreateSessionRequest.swift in Sources */,
+				A10000000000000000000054 /* GhosttyTerminalHost.swift in Sources */,
 				A10000000000000000000016 /* FolderPicker.swift in Sources */,
 				A10000000000000000000017 /* SettingsWindowController.swift in Sources */,
 				A10000000000000000000018 /* HotkeyShortcut.swift in Sources */,
@@ -327,10 +391,16 @@
 				A1000000000000000000001D /* VoiceDictationService.swift in Sources */,
 				A1000000000000000000001F /* WhisperCPPTranscriber.swift in Sources */,
 				A10000000000000000000030 /* ChatService.swift in Sources */,
+				A10000000000000000000033 /* ChatHistoryStore.swift in Sources */,
+				A10000000000000000000070 /* FastplayModels.swift in Sources */,
+				A10000000000000000000071 /* FastplayAPIClient.swift in Sources */,
+				A10000000000000000000072 /* FastplayAuthStore.swift in Sources */,
+				A10000000000000000000073 /* BoardStore.swift in Sources */,
+				A10000000000000000000074 /* BoardView.swift in Sources */,
+				A10000000000000000000075 /* BoardWindowController.swift in Sources */,
+				A10000000000000000000076 /* BoardModeView.swift in Sources */,
 				A10000000000000000000031 /* ChatModeView.swift in Sources */,
-				A10000000000000000000032 /* LauncherMetrics.swift in Sources */,
-				A10000000000000000000033 /* AgentActivityRegistry.swift in Sources */,
-				A10000000000000000000034 /* ClaudeCodeActivityAdapter.swift in Sources */,
+				A10000000000000000000060 /* ChatRichContent.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -343,42 +413,13 @@
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;
-				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
-				CLANG_WARN_BOOL_CONVERSION = YES;
-				CLANG_WARN_COMMA = YES;
-				CLANG_WARN_CONSTANT_CONVERSION = YES;
-				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
-				CLANG_WARN_EMPTY_BODY = YES;
-				CLANG_WARN_ENUM_CONVERSION = YES;
-				CLANG_WARN_INFINITE_RECURSION = YES;
-				CLANG_WARN_INT_CONVERSION = YES;
-				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
-				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
-				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
-				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
-				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
-				CLANG_WARN_STRICT_PROTOTYPES = YES;
-				CLANG_WARN_SUSPICIOUS_MOVE = YES;
-				CLANG_WARN_UNREACHABLE_CODE = YES;
-				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = dwarf;
-				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GCC_DYNAMIC_NO_PIC = NO;
-				GCC_NO_COMMON_BLOCKS = YES;
-				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
-				GCC_WARN_ABOUT_RETURN_TYPE = YES;
-				GCC_WARN_UNDECLARED_SELECTOR = YES;
-				GCC_WARN_UNINITIALIZED_AUTOS = YES;
-				GCC_WARN_UNUSED_FUNCTION = YES;
-				GCC_WARN_UNUSED_VARIABLE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = macosx;
-				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 			};
@@ -390,39 +431,10 @@
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;
-				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
-				CLANG_WARN_BOOL_CONVERSION = YES;
-				CLANG_WARN_COMMA = YES;
-				CLANG_WARN_CONSTANT_CONVERSION = YES;
-				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
-				CLANG_WARN_EMPTY_BODY = YES;
-				CLANG_WARN_ENUM_CONVERSION = YES;
-				CLANG_WARN_INFINITE_RECURSION = YES;
-				CLANG_WARN_INT_CONVERSION = YES;
-				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
-				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
-				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
-				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
-				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
-				CLANG_WARN_STRICT_PROTOTYPES = YES;
-				CLANG_WARN_SUSPICIOUS_MOVE = YES;
-				CLANG_WARN_UNREACHABLE_CODE = YES;
-				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				ENABLE_STRICT_OBJC_MSGSEND = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
-				GCC_NO_COMMON_BLOCKS = YES;
-				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
-				GCC_WARN_ABOUT_RETURN_TYPE = YES;
-				GCC_WARN_UNDECLARED_SELECTOR = YES;
-				GCC_WARN_UNINITIALIZED_AUTOS = YES;
-				GCC_WARN_UNUSED_FUNCTION = YES;
-				GCC_WARN_UNUSED_VARIABLE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				SDKROOT = macosx;
-				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 			};
@@ -437,7 +449,6 @@
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
-				DEAD_CODE_STRIPPING = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Fastq/Info.plist;
@@ -450,6 +461,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = app.fastq.launcher;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "Fastq/Fastq-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
 			};
 			name = Debug;
@@ -463,7 +475,6 @@
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
-				DEAD_CODE_STRIPPING = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Fastq/Info.plist;
@@ -476,6 +487,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = app.fastq.launcher;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "Fastq/Fastq-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
 			};
 			name = Release;
@@ -502,6 +514,44 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		A20000000000000000000042 /* XCRemoteSwiftPackageReference "libghostty-spm" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/Lakr233/libghostty-spm.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.2.11;
+			};
+		};
+		A20000000000000000000044 /* XCRemoteSwiftPackageReference "MSDisplayLink" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/Lakr233/MSDisplayLink.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.1.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		A20000000000000000000040 /* GhosttyTerminal */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A20000000000000000000042 /* XCRemoteSwiftPackageReference "libghostty-spm" */;
+			productName = GhosttyTerminal;
+		};
+		A20000000000000000000041 /* GhosttyTheme */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A20000000000000000000042 /* XCRemoteSwiftPackageReference "libghostty-spm" */;
+			productName = GhosttyTheme;
+		};
+		A20000000000000000000043 /* MSDisplayLink */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A20000000000000000000044 /* XCRemoteSwiftPackageReference "MSDisplayLink" */;
+			productName = MSDisplayLink;
+		};
+/* End XCSwiftPackageProductDependency section */
+
 	};
 	rootObject = A80000000000000000000001 /* Project object */;
 }
