@@ -47,6 +47,47 @@ final class AppSettings: ObservableObject {
         didSet { save() }
     }
 
+    /// Last-used launcher mode (⌘1 chat / ⌘2 agent) — restored on open.
+    @Published var launcherMode: LauncherMode {
+        didSet { save() }
+    }
+
+    @Published var chatProvider: ChatProvider {
+        didSet { save() }
+    }
+
+    @Published var anthropicAPIKey: String {
+        didSet { save() }
+    }
+
+    @Published var openAIAPIKey: String {
+        didSet { save() }
+    }
+
+    @Published var anthropicChatModel: String {
+        didSet { save() }
+    }
+
+    @Published var openAIChatModel: String {
+        didSet { save() }
+    }
+
+    /// Model to send for the active chat provider.
+    var chatModel: String {
+        switch chatProvider {
+        case .anthropic: return anthropicChatModel
+        case .openai: return openAIChatModel
+        }
+    }
+
+    /// API key for the active chat provider.
+    var chatAPIKey: String {
+        switch chatProvider {
+        case .anthropic: return anthropicAPIKey
+        case .openai: return openAIAPIKey
+        }
+    }
+
     private let defaultsKey = "fastq.settings.v1"
     private let maxRecents = 8
 
@@ -72,6 +113,12 @@ final class AppSettings: ObservableObject {
             }
             isLoggedIn = decoded.isLoggedIn
             promptHistory = decoded.promptHistory
+            launcherMode = decoded.launcherMode
+            chatProvider = decoded.chatProvider
+            anthropicAPIKey = decoded.anthropicAPIKey
+            openAIAPIKey = decoded.openAIAPIKey
+            anthropicChatModel = decoded.anthropicChatModel
+            openAIChatModel = decoded.openAIChatModel
             // Drop legacy Cursor GUI default if it pointed at a removed tool.
             if let defaultToolID, !tools.contains(where: { $0.id == defaultToolID && $0.enabled }) {
                 self.defaultToolID = tools.first(where: \.enabled)?.id
@@ -90,6 +137,12 @@ final class AppSettings: ObservableObject {
             recentProjectIDs = []
             isLoggedIn = false
             promptHistory = []
+            launcherMode = .agent
+            chatProvider = .anthropic
+            anthropicAPIKey = ""
+            openAIAPIKey = ""
+            anthropicChatModel = ChatProvider.anthropic.defaultModel
+            openAIChatModel = ChatProvider.openai.defaultModel
         }
     }
 
@@ -204,7 +257,13 @@ final class AppSettings: ObservableObject {
             hasCompletedOnboarding: hasCompletedOnboarding,
             recentProjectIDs: recentProjectIDs,
             isLoggedIn: isLoggedIn,
-            promptHistory: promptHistory
+            promptHistory: promptHistory,
+            launcherMode: launcherMode,
+            chatProvider: chatProvider,
+            anthropicAPIKey: anthropicAPIKey,
+            openAIAPIKey: openAIAPIKey,
+            anthropicChatModel: anthropicChatModel,
+            openAIChatModel: openAIChatModel
         )
         if let data = try? JSONEncoder().encode(payload) {
             UserDefaults.standard.set(data, forKey: defaultsKey)
@@ -223,11 +282,19 @@ private struct PersistedSettings: Codable {
     var recentProjectIDs: [UUID]
     var isLoggedIn: Bool
     var promptHistory: [String]
+    var launcherMode: LauncherMode
+    var chatProvider: ChatProvider
+    var anthropicAPIKey: String
+    var openAIAPIKey: String
+    var anthropicChatModel: String
+    var openAIChatModel: String
 
     enum CodingKeys: String, CodingKey {
         case projects, tools, defaultToolID, defaultModel
         case hotkeyKeyCode, hotkeyModifiers, hasCompletedOnboarding, recentProjectIDs
         case isLoggedIn, promptHistory
+        case launcherMode, chatProvider, anthropicAPIKey, openAIAPIKey
+        case anthropicChatModel, openAIChatModel
     }
 
     init(
@@ -240,7 +307,13 @@ private struct PersistedSettings: Codable {
         hasCompletedOnboarding: Bool,
         recentProjectIDs: [UUID],
         isLoggedIn: Bool,
-        promptHistory: [String]
+        promptHistory: [String],
+        launcherMode: LauncherMode,
+        chatProvider: ChatProvider,
+        anthropicAPIKey: String,
+        openAIAPIKey: String,
+        anthropicChatModel: String,
+        openAIChatModel: String
     ) {
         self.projects = projects
         self.tools = tools
@@ -252,6 +325,12 @@ private struct PersistedSettings: Codable {
         self.recentProjectIDs = recentProjectIDs
         self.isLoggedIn = isLoggedIn
         self.promptHistory = promptHistory
+        self.launcherMode = launcherMode
+        self.chatProvider = chatProvider
+        self.anthropicAPIKey = anthropicAPIKey
+        self.openAIAPIKey = openAIAPIKey
+        self.anthropicChatModel = anthropicChatModel
+        self.openAIChatModel = openAIChatModel
     }
 
     init(from decoder: Decoder) throws {
@@ -269,6 +348,14 @@ private struct PersistedSettings: Codable {
         recentProjectIDs = try container.decodeIfPresent([UUID].self, forKey: .recentProjectIDs) ?? []
         isLoggedIn = try container.decodeIfPresent(Bool.self, forKey: .isLoggedIn) ?? false
         promptHistory = try container.decodeIfPresent([String].self, forKey: .promptHistory) ?? []
+        launcherMode = try container.decodeIfPresent(LauncherMode.self, forKey: .launcherMode) ?? .agent
+        chatProvider = try container.decodeIfPresent(ChatProvider.self, forKey: .chatProvider) ?? .anthropic
+        anthropicAPIKey = try container.decodeIfPresent(String.self, forKey: .anthropicAPIKey) ?? ""
+        openAIAPIKey = try container.decodeIfPresent(String.self, forKey: .openAIAPIKey) ?? ""
+        anthropicChatModel = try container.decodeIfPresent(String.self, forKey: .anthropicChatModel)
+            ?? ChatProvider.anthropic.defaultModel
+        openAIChatModel = try container.decodeIfPresent(String.self, forKey: .openAIChatModel)
+            ?? ChatProvider.openai.defaultModel
     }
 }
 

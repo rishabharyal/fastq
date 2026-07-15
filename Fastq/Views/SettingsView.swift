@@ -11,6 +11,8 @@ struct SettingsView: View {
                 .tabItem { Label("Projects", systemImage: "folder") }
             toolsTab
                 .tabItem { Label("Tools", systemImage: "hammer") }
+            chatTab
+                .tabItem { Label("Chat", systemImage: "bubble.left.and.bubble.right") }
             generalTab
                 .tabItem { Label("General", systemImage: "gearshape") }
         }
@@ -80,6 +82,44 @@ struct SettingsView: View {
                 .padding(.vertical, 4)
             }
         }
+        .padding(8)
+    }
+
+    private var chatTab: some View {
+        Form {
+            Section("Chat mode (⌘1 in the launcher)") {
+                Picker("Provider", selection: $settings.chatProvider) {
+                    ForEach(ChatProvider.allCases) { provider in
+                        Text(provider.displayName).tag(provider)
+                    }
+                }
+            }
+
+            Section("Anthropic") {
+                SecureField("API key (sk-ant-…)", text: $settings.anthropicAPIKey)
+                Picker("Model", selection: $settings.anthropicChatModel) {
+                    ForEach(ChatProvider.anthropic.models, id: \.id) { model in
+                        Text(model.name).tag(model.id)
+                    }
+                }
+            }
+
+            Section("OpenAI") {
+                SecureField("API key (sk-…)", text: $settings.openAIAPIKey)
+                Picker("Model", selection: $settings.openAIChatModel) {
+                    ForEach(ChatProvider.openai.models, id: \.id) { model in
+                        Text(model.name).tag(model.id)
+                    }
+                }
+            }
+
+            Section {
+                Text("Keys are stored locally in Fastq's preferences and sent only to the provider you select.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
         .padding(8)
     }
 

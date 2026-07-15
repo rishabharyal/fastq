@@ -25,11 +25,15 @@ struct LauncherView: View {
 
     @StateObject private var fileMentions = FileMentionIndex()
     @StateObject private var voice = VoiceDictationService()
+    @StateObject private var chat = ChatService()
+    /// ⌘1 chat / ⌘2 agent; restored from settings and persisted on change.
+    @State private var mode: LauncherMode = .agent
     @State private var mentionQuery: PromptMentionQuery?
     @State private var mentionResults: [FileMentionItem] = []
     @State private var mentionSelection = 0
     @State private var mentionVisible = false
     @State private var voiceError: String?
+    @State private var showDictationOffAlert = false
 
     /// Prompt editor hugs its text (single line ≈ 24pt, grows to 72pt).
     @State private var promptHeight: CGFloat = 24
@@ -58,9 +62,11 @@ struct LauncherView: View {
     }
 
     /// The middle session area only earns its height when there is something
-    /// to show (sessions, setup steps) or an overlay needs room to render.
+    /// to show (sessions, setup steps, the chat thread) or an overlay needs
+    /// room to render.
     private var showsContentArea: Bool {
-        !sessions.sessions.isEmpty || settings.needsSetup || mentionVisible || showProjectPicker
+        if mode == .chat { return true }
+        return !sessions.sessions.isEmpty || settings.needsSetup || mentionVisible || showProjectPicker
     }
 
     var body: some View {
@@ -177,9 +183,23 @@ struct LauncherView: View {
         } message: {
             Text(voiceError ?? "")
         }
+        .alert("Turn on Dictation", isPresented: $showDictationOffAlert) {
+            Button("Open System Settings") {
+                NSWorkspace.shared.open(
+                    URL(string: "x-apple.systempreferences:com.apple.Keyboard-Settings.extension")!
+                )
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Fastq dictation uses Apple speech recognition, which macOS only allows when Siri or Dictation is enabled. Turn on Dictation in System Settings → Keyboard, then try the mic again.")
+        }
         .onChange(of: voice.phase) { _, phase in
             if case .failed(let message) = phase {
-                voiceError = message
+                if message == VoiceDictationService.dictationDisabledMessage {
+                    showDictationOffAlert = true
+                } else {
+                    voiceError = message
+                }
             }
         }
         .onChange(of: prompt) { _, newValue in
@@ -195,6 +215,74 @@ struct LauncherView: View {
         }
     }
 
+    // MARK: - Mode switch (⌘1 chat / ⌘2 agent)
+
+    /// Leading prompt icon doubles as the mode indicator: 💬 chat / 🤖 agent.
+    /// Click toggles; ⌘1 / ⌘2 jump directly.
+    private var modeIcon: some View {
+        Button {
+            switchMode(to: mode == .chat ? .agent : .chat)
+        } label: {
+            Text(mode == .chat ? "💬" : "🤖")
+                .font(.system(size: 15))
+                .frame(width: 22, alignment: .center)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.top, 2)
+        .help(mode == .chat
+              ? "Chat mode — ⌘2 switches to Agent"
+              : "Agent mode — ⌘1 switches to Chat")
+        .accessibilityLabel(mode == .chat ? "Chat mode" : "Agent mode")
+    }
+
+    private func switchMode(to target: LauncherMode) {
+        guard mode != target else { return }
+        withAnimation(.easeOut(duration: 0.15)) {
+            mode = target
+        }
+        settings.launcherMode = target
+        focusPromptSoon()
+    }
+
+    /// Chat mode's counterpart to the tool/model chips: provider + model menu.
+    private var chatModelChip: some View {
+        Menu {
+            ForEach(ChatProvider.allCases) { provider in
+                Section(provider.displayName) {
+                    ForEach(provider.models, id: \.id) { model in
+                        Button {
+                            settings.chatProvider = provider
+                            switch provider {
+                            case .anthropic: settings.anthropicChatModel = model.id
+                            case .openai: settings.openAIChatModel = model.id
+                            }
+                        } label: {
+                            if settings.chatProvider == provider, settings.chatModel == model.id {
+                                Label(model.name, systemImage: "checkmark")
+                            } else {
+                                Text(model.name)
+                            }
+                        }
+                    }
+                }
+            }
+            Divider()
+            Button("API Keys…") { onOpenSettings() }
+        } label: {
+            ChipLabel(
+                systemIcon: "sparkles",
+                title: settings.chatProvider.displayName(forModel: settings.chatModel),
+                isActive: false
+            )
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Chat model")
+        .accessibilityLabel("Chat model: \(settings.chatProvider.displayName(forModel: settings.chatModel))")
+    }
+
     // MARK: - Voice
 
     private var voiceButton: some View {
@@ -202,6 +290,14 @@ struct LauncherView: View {
             // Click still works as a toggle for accessibility / trackpad users.
             if voice.isListening {
                 voice.endHold()
+            } else if !voice.systemSpeechAvailable {
+                // Re-check first — the user may have just flipped the toggle.
+                voice.refreshSystemSpeechAvailability()
+                if voice.systemSpeechAvailable {
+                    voice.beginHold(currentPrompt: prompt) { prompt = $0 }
+                } else {
+                    showDictationOffAlert = true
+                }
             } else {
                 voice.beginHold(currentPrompt: prompt) { prompt = $0 }
             }
@@ -210,9 +306,13 @@ struct LauncherView: View {
                 if voice.isListening {
                     VoicePulseRing(level: voice.level)
                 }
-                Image(systemName: "mic.fill")
+                Image(systemName: voice.systemSpeechAvailable ? "mic.fill" : "mic.slash.fill")
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(voice.isListening ? Color.accentColor : .secondary)
+                    .foregroundStyle(
+                        voice.isListening
+                            ? Color.accentColor
+                            : (voice.systemSpeechAvailable ? Color.secondary : Color.red.opacity(0.7))
+                    )
                     .scaleEffect(voice.isListening ? 1 + CGFloat(voice.level) * 0.2 : 1)
                     .animation(.easeOut(duration: 0.08), value: voice.level)
             }
@@ -228,6 +328,9 @@ struct LauncherView: View {
     }
 
     private var voiceHelp: String {
+        if !voice.systemSpeechAvailable {
+            return "Dictation is off in macOS — click for how to enable it"
+        }
         switch voice.phase {
         case .listening:
             return "Listening… click to finish"
@@ -274,10 +377,7 @@ struct LauncherView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top, spacing: 12) {
-                Image(systemName: "chevron.left.forwardslash.chevron.right")
-                    .font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(.secondary)
-                    .padding(.top, 3)
+                modeIcon
 
                 PromptEditor(
                     text: $prompt,
@@ -320,17 +420,21 @@ struct LauncherView: View {
             }
 
             HStack(spacing: 6) {
-                projectChip
-                    .controlFocusRing(focusedControl == .project)
-                    .accessibilityLabel("Project: \(selectedProject?.name ?? "none")")
-                toolMenu
-                    .controlFocusRing(focusedControl == .tool)
-                    .accessibilityLabel("Agent: \(selectedTool?.displayName ?? "none")")
-                modelMenu
-                    .controlFocusRing(focusedControl == .model)
-                    .accessibilityLabel("Model: \(selectedModel.displayName)")
+                if mode == .chat {
+                    chatModelChip
+                } else {
+                    projectChip
+                        .controlFocusRing(focusedControl == .project)
+                        .accessibilityLabel("Project: \(selectedProject?.name ?? "none")")
+                    toolMenu
+                        .controlFocusRing(focusedControl == .tool)
+                        .accessibilityLabel("Agent: \(selectedTool?.displayName ?? "none")")
+                    modelMenu
+                        .controlFocusRing(focusedControl == .model)
+                        .accessibilityLabel("Model: \(selectedModel.displayName)")
+                }
 
-                if isLaunching {
+                if isLaunching, mode == .agent {
                     HStack(spacing: 5) {
                         ProgressView()
                             .controlSize(.mini)
@@ -397,8 +501,11 @@ struct LauncherView: View {
 
     private var canGo: Bool {
         if showProjectPicker { return false }
-        if isLaunching { return false }
         let hasPrompt = !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        if mode == .chat {
+            return hasPrompt && !chat.isStreaming
+        }
+        if isLaunching { return false }
         let hasSession = selectedSessionID != nil
         return hasPrompt || hasSession
     }
@@ -617,7 +724,13 @@ struct LauncherView: View {
 
     private var content: some View {
         Group {
-            if sessions.sessions.isEmpty {
+            if mode == .chat {
+                ChatModeView(
+                    chat: chat,
+                    providerName: settings.chatProvider.displayName,
+                    modelName: settings.chatProvider.displayName(forModel: settings.chatModel)
+                )
+            } else if sessions.sessions.isEmpty {
                 emptyState
             } else {
                 sessionList
@@ -837,6 +950,10 @@ struct LauncherView: View {
 
     private func submitPrimary() {
         if showProjectPicker { return }
+        if mode == .chat {
+            sendChatMessage()
+            return
+        }
         if let session = sessions.sessions.first(where: { $0.id == selectedSessionID }),
            prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             launcher.focus(session)
@@ -848,7 +965,29 @@ struct LauncherView: View {
         Task { await launchAgent() }
     }
 
+    private func sendChatMessage() {
+        let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, !chat.isStreaming else { return }
+        let apiKey = settings.chatAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !apiKey.isEmpty else {
+            errorMessage = "Add your \(settings.chatProvider.displayName) API key in Settings → Chat first."
+            return
+        }
+        settings.recordPrompt(prompt)
+        historyIndex = nil
+        chat.send(
+            text: text,
+            attachments: attachments,
+            provider: settings.chatProvider,
+            model: settings.chatModel,
+            apiKey: apiKey
+        )
+        prompt = ""
+        attachments = []
+    }
+
     private func bootstrapSelection() {
+        mode = settings.launcherMode
         if let recent = settings.recentProjectIDs.first,
            settings.projects.contains(where: { $0.id == recent }) {
             selectedProjectID = recent
@@ -989,6 +1128,12 @@ struct LauncherView: View {
 
             if mods == .command {
                 switch event.charactersIgnoringModifiers?.lowercased() {
+                case "1":
+                    DispatchQueue.main.async { switchMode(to: .chat) }
+                    return nil
+                case "2":
+                    DispatchQueue.main.async { switchMode(to: .agent) }
+                    return nil
                 case "b":
                     DispatchQueue.main.async { showBoardPlaceholder() }
                     return nil
@@ -999,6 +1144,13 @@ struct LauncherView: View {
                     ]) as? [URL], !urls.isEmpty {
                         DispatchQueue.main.async {
                             LauncherKeyRouter.shared.attachFiles?(urls)
+                        }
+                        return nil
+                    }
+                    // Raw image data (screenshots, copied images) → temp PNG.
+                    if let imageURL = Self.pastedImageURL(from: pb) {
+                        DispatchQueue.main.async {
+                            LauncherKeyRouter.shared.attachFiles?([imageURL])
                         }
                         return nil
                     }
@@ -1053,6 +1205,27 @@ struct LauncherView: View {
             }
 
             return event
+        }
+    }
+
+    /// Writes clipboard image data (screenshot, copied image) to a temp PNG
+    /// so it can ride the existing file-attachment path.
+    private static func pastedImageURL(from pb: NSPasteboard) -> URL? {
+        var data: Data?
+        if let png = pb.data(forType: .png) {
+            data = png
+        } else if let tiff = pb.data(forType: .tiff),
+                  let rep = NSBitmapImageRep(data: tiff) {
+            data = rep.representation(using: .png, properties: [:])
+        }
+        guard let data else { return nil }
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("Pasted-\(UUID().uuidString.prefix(8)).png")
+        do {
+            try data.write(to: url)
+            return url
+        } catch {
+            return nil
         }
     }
 

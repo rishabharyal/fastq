@@ -8,45 +8,88 @@ import GhosttyTerminal
 @MainActor
 enum FastqTerminalEngine {
     static let controller: TerminalController = {
-        TerminalController(theme: fastqTheme) { builder in
+        // Prefer the user's real Ghostty config (theme, font, palette…) when
+        // they have one, layering only Fastq's functional overrides on top.
+        // Fall back to the built-in Afterglow theme otherwise.
+        if let userConfig = userGhosttyConfigPath() {
+            exposeGhosttyResourcesDir()
+            return TerminalController(
+                configSource: .file(userConfig),
+                theme: .default,
+                terminalConfiguration: TerminalConfiguration { builder in
+                    applyFastqOverrides(&builder)
+                }
+            )
+        }
+        return TerminalController(theme: fastqTheme) { builder in
             builder.withCursorStyle(.block)
             builder.withCursorStyleBlink(false)
             builder.withFontSize(13)
             builder.withFontThicken(true)
-            builder.withWindowPaddingX(10)
-            builder.withWindowPaddingY(8)
-            builder.withCustom("mouse-hide-while-typing", "true")
-
-            // Terminal-owned shortcuts. These fire before the menu bar when the
-            // surface is focused; menu items with the same equivalents cover the
-            // sidebar-focused case.
-            for bind in [
-                "super+c=copy_to_clipboard",
-                "super+v=paste_from_clipboard",
-                "super+a=select_all",
-                "super+k=clear_screen",
-                "super+equal=increase_font_size:1",
-                "super+plus=increase_font_size:1",
-                "super+minus=decrease_font_size:1",
-                "super+zero=reset_font_size",
-                // Line editing, Terminal.app/iTerm conventions.
-                "alt+left=esc:b",
-                "alt+right=esc:f",
-                "super+left=text:\\x01",
-                "super+right=text:\\x05",
-                "super+backspace=text:\\x15",
-                // Scrollback navigation.
-                "super+home=scroll_to_top",
-                "super+end=scroll_to_bottom",
-                "shift+page_up=scroll_page_up",
-                "shift+page_down=scroll_page_down",
-                "super+up=jump_to_prompt:-1",
-                "super+down=jump_to_prompt:1",
-            ] {
-                builder.withCustom("keybind", bind)
-            }
+            applyFastqOverrides(&builder)
         }
     }()
+
+    /// Non-cosmetic settings Fastq needs regardless of whose theme is active.
+    private static func applyFastqOverrides(_ builder: inout TerminalConfiguration.Builder) {
+        builder.withWindowPaddingX(10)
+        builder.withWindowPaddingY(8)
+        builder.withCustom("mouse-hide-while-typing", "true")
+
+        // Terminal-owned shortcuts. These fire before the menu bar when the
+        // surface is focused; menu items with the same equivalents cover the
+        // sidebar-focused case.
+        for bind in [
+            "super+c=copy_to_clipboard",
+            "super+v=paste_from_clipboard",
+            "super+a=select_all",
+            "super+k=clear_screen",
+            "super+equal=increase_font_size:1",
+            "super+plus=increase_font_size:1",
+            "super+minus=decrease_font_size:1",
+            "super+zero=reset_font_size",
+            // Line editing, Terminal.app/iTerm conventions.
+            "alt+left=esc:b",
+            "alt+right=esc:f",
+            "super+left=text:\\x01",
+            "super+right=text:\\x05",
+            "super+backspace=text:\\x15",
+            // Scrollback navigation.
+            "super+home=scroll_to_top",
+            "super+end=scroll_to_bottom",
+            "shift+page_up=scroll_page_up",
+            "shift+page_down=scroll_page_down",
+            "super+up=jump_to_prompt:-1",
+            "super+down=jump_to_prompt:1",
+        ] {
+            builder.withCustom("keybind", bind)
+        }
+    }
+
+    /// Same lookup order Ghostty itself uses for its config file.
+    private static func userGhosttyConfigPath() -> String? {
+        let fm = FileManager.default
+        var candidates: [String] = []
+        if let xdg = ProcessInfo.processInfo.environment["XDG_CONFIG_HOME"], !xdg.isEmpty {
+            candidates.append("\(xdg)/ghostty/config")
+        }
+        let home = fm.homeDirectoryForCurrentUser.path
+        candidates.append("\(home)/.config/ghostty/config")
+        candidates.append("\(home)/Library/Application Support/com.mitchellh.ghostty/config")
+        return candidates.first { fm.fileExists(atPath: $0) }
+    }
+
+    /// Named themes (`theme = Rose Pine`) resolve from Ghostty's resources
+    /// directory; embedded libghostty ships none, so borrow the installed
+    /// Ghostty.app's copy. Must run before the first TerminalController is
+    /// created (ghostty_init reads the env var).
+    private static func exposeGhosttyResourcesDir() {
+        guard getenv("GHOSTTY_RESOURCES_DIR") == nil else { return }
+        let resources = "/Applications/Ghostty.app/Contents/Resources/ghostty"
+        if FileManager.default.fileExists(atPath: "\(resources)/themes") {
+            setenv("GHOSTTY_RESOURCES_DIR", resources, 1)
+        }
+    }
 
     /// Afterglow palette with Fastq's window background + accent cursor.
     private static var fastqTheme: TerminalTheme {
@@ -83,6 +126,80 @@ extension Notification.Name {
     static let fastqTerminalBindingAction = Notification.Name("fastq.terminalBindingAction")
 }
 
+// MARK: - Surface view with a context menu
+
+/// TerminalView that always offers a right-click context menu. The base view
+/// forwards right-clicks to the terminal as mouse input and only shows a menu
+/// when clicking an existing selection — standard-terminal behavior (Copy /
+/// Paste / Select All / Clear) is friendlier for this app.
+final class FastqSurfaceView: TerminalView {
+    // MARK: Paste
+
+    /// ⌘V handled deterministically. The base class routes command keys
+    /// through ghostty's binding lookup, and when that lookup misses, the
+    /// event dies (the default Edit menu has no paste(_:) responder) — which
+    /// is why pasting into agents silently failed. Intercept before the base
+    /// class sees it.
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if event.type == .keyDown,
+           window?.firstResponder === self,
+           event.modifierFlags.intersection([.command, .option, .control, .shift]) == .command,
+           event.charactersIgnoringModifiers?.lowercased() == "v" {
+            pasteClipboard()
+            return true
+        }
+        return super.performKeyEquivalent(with: event)
+    }
+
+    private func pasteClipboard() {
+        // Prefer ghostty's own action — it wraps the text in bracketed-paste
+        // markers for apps that enabled it (Claude Code does). Fall back to
+        // raw injection if the action fails to dispatch.
+        if performBindingAction("paste_from_clipboard") { return }
+        if let text = NSPasteboard.general.string(forType: .string), !text.isEmpty {
+            sendText(text)
+        }
+    }
+
+    // MARK: Context menu
+
+    override func rightMouseDown(with event: NSEvent) {
+        window?.makeFirstResponder(self)
+        NSMenu.popUpContextMenu(contextMenu(), with: event, for: self)
+    }
+
+    override func rightMouseUp(with event: NSEvent) {
+        // Swallowed — the context menu owns this click; forwarding the
+        // release without its press would confuse the PTY's mouse reporting.
+    }
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        contextMenu()
+    }
+
+    private func contextMenu() -> NSMenu {
+        let menu = NSMenu()
+        menu.addItem(item("Copy", action: #selector(menuCopy), key: "c"))
+        menu.addItem(item("Paste", action: #selector(menuPaste), key: "v"))
+        menu.addItem(item("Select All", action: #selector(menuSelectAll), key: "a"))
+        menu.addItem(.separator())
+        menu.addItem(item("Clear", action: #selector(menuClear), key: "k"))
+        return menu
+    }
+
+    private func item(_ title: String, action: Selector, key: String) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
+        item.keyEquivalentModifierMask = [.command]
+        item.target = self
+        return item
+    }
+
+    @objc private func menuCopy() { _ = performBindingAction("copy_to_clipboard") }
+    @objc private func menuPaste() { pasteClipboard() }
+    @objc private func menuSelectAll() { _ = performBindingAction("select_all") }
+    @objc private func menuClear() { _ = performBindingAction("clear_screen") }
+}
+
 // MARK: - Per-session host
 
 /// Hosts one Ghostty surface per session, bridged to the session's PTY.
@@ -97,7 +214,7 @@ struct GhosttyTerminalHost: NSViewRepresentable {
     }
 
     func makeNSView(context: Context) -> TerminalView {
-        let view = TerminalView(frame: .zero)
+        let view = FastqSurfaceView(frame: .zero)
         view.delegate = context.coordinator
         view.controller = FastqTerminalEngine.controller
         view.configuration = TerminalSurfaceOptions(

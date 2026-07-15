@@ -27,7 +27,7 @@
 	<key>NSAppleEventsUsageDescription</key>
 	<string>Fastq needs automation access to focus and quit agent windows it launches.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Fastq uses the microphone so you can dictate prompts. Speech is transcribed on-device with Whisper (Nepali and accented English → English text).</string>
+	<string>Fastq uses the microphone so you can dictate prompts with Apple speech recognition.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Fastq transcribes your voice on-device to fill the launcher prompt.</string>
 	<key>NSHumanReadableCopyright</key>

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # OPTIONAL — only for future GhosttyKit rendering. Not required to run Fastq.
-# Daily use: ./scripts/run-dev.sh && open build/DevProducts/Fastq.app
+# Daily use: ./scripts/run-dev.sh && open build.noindex/DevProducts/Fastq.app
 # Build GhosttyKit.xcframework the same way cmux does.
 # Prereq: brew install zig
 set -euo pipefail

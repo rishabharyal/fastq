@@ -1,5 +1,13 @@
 import Foundation
 
+/// What the launcher does with a submitted prompt.
+enum LauncherMode: String, Codable {
+    /// General LLM chat (Anthropic / OpenAI APIs) with attachments.
+    case chat
+    /// Launch a coding agent in Fastq Terminal (the original behavior).
+    case agent
+}
+
 enum AgentToolKind: String, Codable, CaseIterable, Identifiable {
     case cursorCLI
     case claudeCode
