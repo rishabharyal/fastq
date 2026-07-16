@@ -5,7 +5,10 @@ struct ClaudeCodeActivityAdapter: AgentActivityAdapter {
     var toolID: String { AgentToolKind.claudeCode.rawValue }
 
     private var supportDir: URL {
-        URL(fileURLWithPath: FastqIPC.supportDirectory, isDirectory: true)
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support")
+        return base
+            .appendingPathComponent("Fastq", isDirectory: true)
             .appendingPathComponent("claude", isDirectory: true)
     }
 

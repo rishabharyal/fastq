@@ -6,6 +6,7 @@ struct BoardModeView: View {
     @ObservedObject var auth: FastplayAuthStore
     var onSignIn: () -> Void
     var onOpenBoards: () -> Void
+    var onStartAgent: ((column: FastplayColumn, task: FastplayTask)) -> Void = { _ in }
 
     var body: some View {
         Group {
@@ -136,10 +137,24 @@ struct BoardModeView: View {
                     .padding(.vertical, 2)
                     .background(Color.white.opacity(0.06), in: Capsule())
             }
+            Button {
+                onStartAgent((column, task))
+            } label: {
+                Image(systemName: "bolt.fill")
+                    .font(.system(size: 10, weight: .semibold))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(Color.accentColor)
+            .help("Start agent")
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
         .background(Color.white.opacity(0.03), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .contextMenu {
+            Button("Start agent") {
+                onStartAgent((column, task))
+            }
+        }
     }
 
     private func columnDot(_ column: FastplayColumn) -> Color {

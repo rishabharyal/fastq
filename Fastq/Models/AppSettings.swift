@@ -161,7 +161,7 @@ final class AppSettings: ObservableObject {
     }
 
     var needsSetup: Bool {
-        !hasCompletedOnboarding || projects.isEmpty || enabledTools.isEmpty
+        !hasCompletedOnboarding || enabledTools.isEmpty
     }
 
     func addProject(path: String) {

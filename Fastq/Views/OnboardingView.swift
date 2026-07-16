@@ -156,71 +156,17 @@ struct OnboardingView: View {
     private var projectsStep: some View {
         VStack(alignment: .leading, spacing: 18) {
             stepHeading(
-                title: "Add the repos you live in",
-                subtitle: "Fastq launches agents into these folders. You can add more anytime in Settings."
+                title: "Projects live in Fastplay",
+                subtitle: "Sign in, open Boards (⌘B), and link a local folder on each project. Agents run in that folder — related projects in the same workspace are shared as context."
             )
 
-            Button(action: addFolders) {
-                VStack(spacing: 10) {
-                    Image(systemName: "folder.badge.plus")
-                        .font(.system(size: 28, weight: .light))
-                    Text(settings.projects.isEmpty ? "Drop in project folders" : "Add another folder")
-                        .font(.system(size: 15, weight: .semibold))
-                    Text("Click to browse — add as many as you need")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 28)
-                .background(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .strokeBorder(style: StrokeStyle(lineWidth: 1.2, dash: [6, 5]))
-                        .foregroundStyle(Color.white.opacity(0.22))
-                        .background(
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .fill(Color.white.opacity(0.04))
-                        )
-                )
+            VStack(alignment: .leading, spacing: 10) {
+                Label("Create or pick a workspace and project in Boards", systemImage: "checklist")
+                Label("Link the repo folder on each project", systemImage: "folder.badge.plus")
+                Label("In Agent mode, choose workspace + project — folder is implied", systemImage: "desktopcomputer")
             }
-            .buttonStyle(.plain)
-
-            if !settings.projects.isEmpty {
-                ScrollView {
-                    LazyVStack(spacing: 8) {
-                        ForEach(settings.projects) { project in
-                            HStack(spacing: 12) {
-                                Image(systemName: "folder.fill")
-                                    .foregroundStyle(Color(red: 0.95, green: 0.42, blue: 0.28))
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(project.name)
-                                        .font(.system(size: 14, weight: .semibold))
-                                    Text(project.path)
-                                        .font(.system(size: 11))
-                                        .foregroundStyle(.secondary)
-                                        .lineLimit(1)
-                                        .truncationMode(.middle)
-                                }
-                                Spacer(minLength: 8)
-                                Button {
-                                    withAnimation(.easeOut(duration: 0.2)) {
-                                        settings.removeProject(project)
-                                    }
-                                } label: {
-                                    Image(systemName: "xmark.circle.fill")
-                                        .foregroundStyle(.secondary)
-                                }
-                                .buttonStyle(.plain)
-                            }
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 12)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                            .transition(.opacity.combined(with: .move(edge: .top)))
-                        }
-                    }
-                }
-                .frame(maxHeight: 160)
-            }
+            .font(.system(size: 13.5))
+            .foregroundStyle(.secondary)
 
             Spacer(minLength: 0)
         }
@@ -319,7 +265,7 @@ struct OnboardingView: View {
     private var primaryTitle: String {
         switch step {
         case .welcome: return "Get started"
-        case .projects where settings.projects.isEmpty: return "Add folders"
+        case .projects: return "Continue"
         case .ready: return "Open Fastq"
         default: return "Continue"
         }
@@ -346,10 +292,10 @@ struct OnboardingView: View {
     }
 
     private var readinessProjectsLine: String {
-        let count = settings.projects.count
-        if count == 0 { return "No projects yet — add some from Settings" }
-        if count == 1 { return "1 project ready: \(settings.projects[0].name)" }
-        return "\(count) projects ready"
+        let count = ProjectFolderStore.shared.pathsByProjectID.count
+        if count == 0 { return "Link folders on projects in Boards after sign-in" }
+        if count == 1 { return "1 project folder linked" }
+        return "\(count) project folders linked"
     }
 
     private var readinessToolsLine: String {
@@ -364,8 +310,6 @@ struct OnboardingView: View {
             settings.completeOnboarding()
             onOpenLauncher()
             onFinish()
-        case .projects where settings.projects.isEmpty:
-            addFolders()
         default:
             goNext()
         }
@@ -393,14 +337,7 @@ struct OnboardingView: View {
     }
 
     private func addFolders() {
-        FolderPicker.chooseDirectories { urls in
-            guard !urls.isEmpty else { return }
-            withAnimation(.easeOut(duration: 0.25)) {
-                for url in urls {
-                    settings.addProject(path: url.path)
-                }
-            }
-        }
+        // Folders are linked per Fastplay project in Boards — kept for call sites.
     }
 
     private func refreshDetections(animated: Bool = false) {

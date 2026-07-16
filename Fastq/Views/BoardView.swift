@@ -3,6 +3,7 @@ import AppKit
 
 struct BoardView: View {
     @ObservedObject var auth: FastplayAuthStore
+    @ObservedObject private var folders = ProjectFolderStore.shared
     @StateObject private var store = BoardStore()
     @State private var editingTask: FastplayTask?
     @State private var editTitle = ""
@@ -114,6 +115,10 @@ struct BoardView: View {
             }
             .disabled(store.selectedWorkspace == nil)
 
+            if let project = store.selectedProject {
+                folderLinkControl(for: project)
+            }
+
             Spacer()
 
             if store.isLoading {
@@ -129,6 +134,44 @@ struct BoardView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
+    }
+
+    private func folderLinkControl(for project: FastplayProject) -> some View {
+        let linked = folders.path(for: project.id)
+        let label = linked.map { URL(fileURLWithPath: $0).path } ?? "No folder linked"
+        return HStack(spacing: 8) {
+            Image(systemName: linked == nil ? "folder.badge.questionmark" : "folder.fill")
+                .foregroundStyle(linked == nil ? Color.orange : Color.secondary)
+            Text(linked.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "No folder linked")
+                .font(.system(size: 12, weight: .medium))
+                .lineLimit(1)
+                .help(label)
+            if linked != nil {
+                Button("Change…") { pickFolder(for: project.id) }
+                    .controlSize(.small)
+                Button("Clear", role: .destructive) { folders.clear(for: project.id) }
+                    .controlSize(.small)
+            } else {
+                Button("Link folder…") { pickFolder(for: project.id) }
+                    .controlSize(.small)
+                    .buttonStyle(.borderedProminent)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 4)
+        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private func pickFolder(for projectID: String) {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.canCreateDirectories = false
+        panel.prompt = "Link Folder"
+        panel.message = "Choose the local folder for this project. Agents will run here."
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        folders.setPath(url.path, for: projectID)
     }
 
     private var kanban: some View {
@@ -149,7 +192,7 @@ struct BoardView: View {
                         onSubmitDraft: {
                             let title = store.newTaskTitle
                             Task {
-                                await store.createTask(title: title, columnID: column.id)
+                                _ = await store.createTask(title: title, columnID: column.id)
                                 draftTaskColumnID = nil
                             }
                         },
@@ -162,6 +205,15 @@ struct BoardView: View {
                         },
                         onMove: { task, targetColumnID in
                             Task { await store.moveTask(task, to: targetColumnID) }
+                        },
+                        onStartAgent: { task in
+                            StartAgentForTask.post(
+                                task: task,
+                                columnName: column.name,
+                                workspaceID: store.selectedWorkspaceID,
+                                projectID: store.selectedProjectID,
+                                autoLaunch: true
+                            )
                         },
                         allColumns: store.board?.columns ?? []
                     )
@@ -224,6 +276,7 @@ private struct BoardColumnView: View {
     var onEdit: (FastplayTask) -> Void
     var onDelete: (FastplayTask) -> Void
     var onMove: (FastplayTask, String) -> Void
+    var onStartAgent: (FastplayTask) -> Void
     var allColumns: [FastplayColumn]
 
     var body: some View {
@@ -280,6 +333,8 @@ private struct BoardColumnView: View {
                 .fill(Color(nsColor: .controlBackgroundColor))
         )
         .contextMenu {
+            Button("Start agent") { onStartAgent(task) }
+            Divider()
             Button("Edit") { onEdit(task) }
             Menu("Move to") {
                 ForEach(allColumns) { col in
@@ -291,5 +346,18 @@ private struct BoardColumnView: View {
             Button("Delete", role: .destructive) { onDelete(task) }
         }
         .onTapGesture(count: 2) { onEdit(task) }
+        .overlay(alignment: .topTrailing) {
+            Button {
+                onStartAgent(task)
+            } label: {
+                Image(systemName: "bolt.fill")
+                    .font(.system(size: 10, weight: .bold))
+                    .padding(6)
+                    .background(.ultraThinMaterial, in: Circle())
+            }
+            .buttonStyle(.plain)
+            .help("Start agent")
+            .padding(4)
+        }
     }
 }

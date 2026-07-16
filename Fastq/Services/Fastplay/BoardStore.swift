@@ -160,12 +160,13 @@ final class BoardStore: ObservableObject {
         }
     }
 
-    func createTask(title: String, columnID: String?) async {
-        guard let ws = selectedWorkspace, let project = selectedProject else { return }
+    @discardableResult
+    func createTask(title: String, columnID: String?) async -> FastplayTask? {
+        guard let ws = selectedWorkspace, let project = selectedProject else { return nil }
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
+        guard !trimmed.isEmpty else { return nil }
         do {
-            _ = try await FastplayAPIClient.shared.createTask(
+            let task = try await FastplayAPIClient.shared.createTask(
                 workspace: ws.routeKey,
                 project: project.routeKey,
                 title: trimmed,
@@ -173,8 +174,10 @@ final class BoardStore: ObservableObject {
             )
             newTaskTitle = ""
             await refreshBoard()
+            return task
         } catch {
             errorMessage = error.localizedDescription
+            return nil
         }
     }
 

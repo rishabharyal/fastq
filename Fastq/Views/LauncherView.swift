@@ -15,7 +15,6 @@ struct LauncherView: View {
     var onOpenTerminal: (() -> Void)? = nil
 
     @State private var prompt: String = ""
-    @State private var selectedProjectID: UUID?
     @State private var selectedToolID: UUID?
     @State private var selectedModel: AgentModelOption = .auto
     @State private var attachments: [PromptAttachment] = []
@@ -23,7 +22,6 @@ struct LauncherView: View {
     @State private var errorMessage: String?
     @State private var isLaunching = false
     @State private var pasteMonitor: Any?
-    @State private var showProjectPicker = false
     @FocusState private var promptFocused: Bool
 
     @StateObject private var fileMentions = FileMentionIndex()
@@ -31,12 +29,18 @@ struct LauncherView: View {
     @StateObject private var chat = ChatService()
     @StateObject private var chatHistory = ChatHistoryStore()
     @StateObject private var board = BoardStore()
+    @ObservedObject private var folders = ProjectFolderStore.shared
     /// ⌘1 chat / ⌘2 agent / ⌘N board; restored from settings and persisted on change.
     @State private var mode: LauncherMode = .agent
     /// Keep ChatModeView (and its WKWebViews) mounted after first visit so agent↔chat is instant.
     @State private var keepChatMounted = false
-    @State private var mentionQuery: PromptMentionQuery?
+    @State private var activeMention: ActiveMention?
     @State private var mentionResults: [FileMentionItem] = []
+    @State private var taskMentionResults: [TaskMentionItem] = []
+    @State private var taskMentionCache: [String: AgentLinkedTask] = [:]
+    @State private var taskSearchGeneration = 0
+    @State private var isSearchingTasks = false
+    @State private var lastCreatedTask: FastplayTask?
     @State private var mentionSelection = 0
     @State private var mentionVisible = false
     @State private var voiceError: String?
@@ -57,27 +61,25 @@ struct LauncherView: View {
     @State private var showBoardToast = false
 
     enum HeaderControl: Int, CaseIterable {
-        case project, tool, model, attach
+        case tool, model, attach
         case workspace, boardProject, column
     }
 
     private var headerControlsForMode: [HeaderControl] {
         switch mode {
         case .chat: return [.attach]
-        case .agent: return [.project, .tool, .model, .attach]
+        case .agent: return [.workspace, .boardProject, .tool, .model, .attach]
         case .board: return [.workspace, .boardProject, .column, .attach]
         }
     }
 
-    private var selectedProject: ProjectFolder? {
-        if let selectedProjectID {
-            return settings.projects.first { $0.id == selectedProjectID }
-        }
-        return settings.projects.first
-    }
-
     private var selectedTool: ToolConfig? {
         settings.tool(for: selectedToolID ?? settings.defaultToolID)
+    }
+
+    private var linkedProjectPath: String? {
+        guard let id = board.selectedProject?.id else { return nil }
+        return folders.path(for: id)
     }
 
     /// The middle session area only earns its height when there is something
@@ -87,10 +89,134 @@ struct LauncherView: View {
         if mode == .chat || mode == .board { return true }
         if keepChatMounted, !chat.messages.isEmpty { return true }
         if isSessionPreviewOpen { return true }
-        return !sessions.sessions.isEmpty || settings.needsSetup || mentionVisible || showProjectPicker
+        return !sessions.sessions.isEmpty || settings.needsSetup || mentionVisible
     }
 
     var body: some View {
+        launcherChrome
+            .onDrop(of: [.fileURL], isTargeted: nil) { providers in
+                handleFileDrop(providers)
+            }
+            .onAppear(perform: handleLauncherAppear)
+            .onReceive(NotificationCenter.default.publisher(for: .fastqFocusLauncherPrompt)) { _ in
+                chat.resetIfInactive()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .fastqOpenSessionPreview)) { note in
+                if let id = note.object as? UUID {
+                    selectedSessionID = id
+                }
+                openSessionPreview()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .fastqOpenShellPreview)) { _ in
+                openShellInPreview()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: StartAgentForTask.notification)) { note in
+                Task { await handleStartAgentForTask(note) }
+            }
+            .onDisappear {
+                removeKeyMonitors()
+            }
+            .onChange(of: sessions.sessions) { _, newValue in
+                if let selectedSessionID, !newValue.contains(where: { $0.id == selectedSessionID }) {
+                    self.selectedSessionID = newValue.first?.id
+                } else if selectedSessionID == nil {
+                    selectedSessionID = newValue.first?.id
+                }
+            }
+            .onChange(of: board.selectedProjectID) { _, _ in
+                refreshMentionIndex()
+            }
+            .onChange(of: folders.pathsByProjectID) { _, _ in
+                refreshMentionIndex()
+            }
+            .onChange(of: settings.projects) { _, _ in
+                refreshMentionIndex()
+            }
+            .onChange(of: fileMentions.results) { _, newValue in
+                mentionResults = newValue
+                if mentionSelection >= newValue.count {
+                    mentionSelection = max(0, newValue.count - 1)
+                }
+            }
+            .alert("Something went wrong", isPresented: Binding(
+                get: { errorMessage != nil },
+                set: { if !$0 { errorMessage = nil } }
+            )) {
+                Button("OK", role: .cancel) { errorMessage = nil }
+            } message: {
+                Text(errorMessage ?? "")
+            }
+            .sheet(isPresented: $board.showNewProjectSheet) {
+                newProjectSheet
+            }
+            .alert("Voice input", isPresented: Binding(
+                get: { voiceError != nil },
+                set: { if !$0 { voiceError = nil } }
+            )) {
+                Button("OK", role: .cancel) { voiceError = nil }
+            } message: {
+                Text(voiceError ?? "")
+            }
+            .alert("Turn on Dictation", isPresented: $showDictationOffAlert) {
+                Button("Open System Settings") {
+                    NSWorkspace.shared.open(
+                        URL(string: "x-apple.systempreferences:com.apple.Keyboard-Settings.extension")!
+                    )
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Fastq dictation uses Apple speech recognition, which macOS only allows when Siri or Dictation is enabled. Turn on Dictation in System Settings → Keyboard, then try the mic again.")
+            }
+            .onChange(of: auth.isLoggedIn) { _, loggedIn in
+                if loggedIn, mode == .board || mode == .agent {
+                    Task { await board.bootstrap() }
+                }
+            }
+            .onChange(of: voice.phase) { _, phase in
+                if case .failed(let message) = phase {
+                    if message == VoiceDictationService.dictationDisabledMessage {
+                        showDictationOffAlert = true
+                    } else {
+                        voiceError = message
+                    }
+                }
+            }
+            .onChange(of: prompt) { _, newValue in
+                if let index = historyIndex,
+                   !settings.promptHistory.indices.contains(index) || newValue != settings.promptHistory[index] {
+                    historyIndex = nil
+                }
+                if !newValue.isEmpty, historyIndex == nil {
+                    isNavigatingTabs = false
+                }
+            }
+    }
+
+    private var newProjectSheet: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("New project")
+                .font(.headline)
+            TextField("Project name", text: $board.newProjectName)
+                .textFieldStyle(.roundedBorder)
+                .onSubmit {
+                    Task { await board.createProject(name: board.newProjectName) }
+                }
+            HStack {
+                Spacer()
+                Button("Cancel") { board.showNewProjectSheet = false }
+                    .keyboardShortcut(.cancelAction)
+                Button("Create") {
+                    Task { await board.createProject(name: board.newProjectName) }
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(board.newProjectName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .padding(20)
+        .frame(width: 360)
+    }
+
+    private var launcherChrome: some View {
         ZStack {
             // Keep Ghostty surfaces mounted for the life of each PTY so leaving
             // the preview (chat mode, Back, etc.) does not wipe scrollback.
@@ -141,11 +267,6 @@ struct LauncherView: View {
                 .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
         )
         .overlay(alignment: .topLeading) {
-            if showProjectPicker {
-                projectPickerOverlay
-            }
-        }
-        .overlay(alignment: .topLeading) {
             if mentionVisible {
                 mentionPopup
                     .padding(.leading, 46)
@@ -165,138 +286,20 @@ struct LauncherView: View {
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
         }
-        .onDrop(of: [.fileURL], isTargeted: nil) { providers in
-            handleFileDrop(providers)
+    }
+
+    private func handleLauncherAppear() {
+        bootstrapSelection()
+        chat.bind(historyStore: chatHistory)
+        chat.resetIfInactive()
+        if mode == .chat || !chat.messages.isEmpty {
+            keepChatMounted = true
         }
-        .onAppear {
-            bootstrapSelection()
-            chat.bind(historyStore: chatHistory)
-            chat.resetIfInactive()
-            if mode == .chat || !chat.messages.isEmpty {
-                keepChatMounted = true
-            }
-            focusPromptSoon()
-            installKeyMonitors()
-            refreshMentionIndex()
-            voice.prepare()
-            if mode == .board, auth.isLoggedIn {
-                Task { await board.bootstrap() }
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .fastqFocusLauncherPrompt)) { _ in
-            chat.resetIfInactive()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .fastqOpenSessionPreview)) { note in
-            if let id = note.object as? UUID {
-                selectedSessionID = id
-            }
-            openSessionPreview()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .fastqOpenShellPreview)) { _ in
-            openShellInPreview()
-        }
-        .onDisappear {
-            removeKeyMonitors()
-        }
-        .onChange(of: sessions.sessions) { _, newValue in
-            if let selectedSessionID, !newValue.contains(where: { $0.id == selectedSessionID }) {
-                self.selectedSessionID = newValue.first?.id
-            } else if selectedSessionID == nil {
-                selectedSessionID = newValue.first?.id
-            }
-        }
-        .onChange(of: showProjectPicker) { _, isOpen in
-            LauncherKeyRouter.shared.isProjectPickerOpen = isOpen
-            if !isOpen {
-                focusPromptSoon()
-            }
-        }
-        .onChange(of: selectedProjectID) { _, _ in
-            refreshMentionIndex()
-        }
-        .onChange(of: settings.projects) { _, _ in
-            refreshMentionIndex()
-        }
-        .onChange(of: fileMentions.results) { _, newValue in
-            mentionResults = newValue
-            if mentionSelection >= newValue.count {
-                mentionSelection = max(0, newValue.count - 1)
-            }
-        }
-        .alert("Something went wrong", isPresented: Binding(
-            get: { errorMessage != nil },
-            set: { if !$0 { errorMessage = nil } }
-        )) {
-            Button("OK", role: .cancel) { errorMessage = nil }
-        } message: {
-            Text(errorMessage ?? "")
-        }
-        .sheet(isPresented: $board.showNewProjectSheet) {
-            VStack(alignment: .leading, spacing: 14) {
-                Text("New project")
-                    .font(.headline)
-                TextField("Project name", text: $board.newProjectName)
-                    .textFieldStyle(.roundedBorder)
-                    .onSubmit {
-                        Task { await board.createProject(name: board.newProjectName) }
-                    }
-                HStack {
-                    Spacer()
-                    Button("Cancel") { board.showNewProjectSheet = false }
-                        .keyboardShortcut(.cancelAction)
-                    Button("Create") {
-                        Task { await board.createProject(name: board.newProjectName) }
-                    }
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(board.newProjectName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
-            }
-            .padding(20)
-            .frame(width: 360)
-        }
-        .alert("Voice input", isPresented: Binding(
-            get: { voiceError != nil },
-            set: { if !$0 { voiceError = nil } }
-        )) {
-            Button("OK", role: .cancel) { voiceError = nil }
-        } message: {
-            Text(voiceError ?? "")
-        }
-        .alert("Turn on Dictation", isPresented: $showDictationOffAlert) {
-            Button("Open System Settings") {
-                NSWorkspace.shared.open(
-                    URL(string: "x-apple.systempreferences:com.apple.Keyboard-Settings.extension")!
-                )
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Fastq dictation uses Apple speech recognition, which macOS only allows when Siri or Dictation is enabled. Turn on Dictation in System Settings → Keyboard, then try the mic again.")
-        }
-        .onChange(of: auth.isLoggedIn) { _, loggedIn in
-            if loggedIn, mode == .board {
-                Task { await board.bootstrap() }
-            }
-        }
-        .onChange(of: voice.phase) { _, phase in
-            if case .failed(let message) = phase {
-                if message == VoiceDictationService.dictationDisabledMessage {
-                    showDictationOffAlert = true
-                } else {
-                    voiceError = message
-                }
-            }
-        }
-        .onChange(of: prompt) { _, newValue in
-            // Editing a recalled prompt exits history navigation.
-            if let index = historyIndex,
-               !settings.promptHistory.indices.contains(index) || newValue != settings.promptHistory[index] {
-                historyIndex = nil
-            }
-            // Typing pulls the arrows back to the prompt/caret.
-            if !newValue.isEmpty, historyIndex == nil {
-                isNavigatingTabs = false
-            }
-        }
+        focusPromptSoon()
+        installKeyMonitors()
+        refreshMentionIndex()
+        voice.prepare()
+        bootstrapBoardIfNeeded()
     }
 
     // MARK: - Mode switch (⌘1 chat / ⌘2 agent / ⌘N board)
@@ -332,10 +335,15 @@ struct LauncherView: View {
         if target == .chat {
             chat.resetIfInactive()
         }
-        if target == .board, auth.isLoggedIn {
+        if target == .board || target == .agent, auth.isLoggedIn {
             Task { await board.bootstrap() }
         }
         focusPromptSoon()
+    }
+
+    private func bootstrapBoardIfNeeded() {
+        guard mode == .board || mode == .agent, auth.isLoggedIn else { return }
+        Task { await board.bootstrap() }
     }
 
     /// Chat toolbar “New” — archive the current thread (if any) and start a blank chat.
@@ -425,7 +433,7 @@ struct LauncherView: View {
             .frame(width: 28, height: 28)
         }
         .buttonStyle(.plain)
-        .disabled(showProjectPicker || {
+        .disabled({
             if case .requestingAccess = voice.phase { return true }
             return false
         }())
@@ -488,22 +496,22 @@ struct LauncherView: View {
                 PromptEditor(
                     text: $prompt,
                     placeholder: promptPlaceholder,
-                    isEnabled: !showProjectPicker,
-                    isFocused: promptFocused && !showProjectPicker,
+                    isEnabled: true,
+                    isFocused: promptFocused,
                     mentionActive: mentionVisible,
                     isDictating: voice.isListening,
                     onSubmit: submitPrimary,
                     onMentionQueryChange: handleMentionQuery,
                     onMentionNavigate: { delta in
-                        guard !mentionResults.isEmpty else { return }
-                        let count = mentionResults.count
+                        let count = activeMentionListCount
+                        guard count > 0 else { return }
                         mentionSelection = ((mentionSelection + delta) % count + count) % count
                     },
                     onMentionConfirm: confirmMention,
                     onMentionCancel: {
                         mentionVisible = false
                         LauncherKeyRouter.shared.isMentionPopupOpen = false
-                        mentionQuery = nil
+                        activeMention = nil
                     },
                     onHeightChange: { height in
                         let clamped = min(max(height, 24), 72)
@@ -532,9 +540,26 @@ struct LauncherView: View {
                 case .chat:
                     chatModelChip
                 case .agent:
-                    projectChip
-                        .controlFocusRing(focusedControl == .project)
-                        .accessibilityLabel("Project: \(selectedProject?.name ?? "none")")
+                    workspaceChip
+                        .controlFocusRing(focusedControl == .workspace)
+                        .accessibilityLabel("Workspace: \(board.selectedWorkspace?.name ?? "none")")
+                    boardProjectChip
+                        .controlFocusRing(focusedControl == .boardProject)
+                        .accessibilityLabel("Project: \(board.selectedProject?.name ?? "none")")
+                    if let path = linkedProjectPath {
+                        Text(URL(fileURLWithPath: path).lastPathComponent)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .help(path)
+                    } else if board.selectedProject != nil {
+                        Button("Link folder…") {
+                            linkFolderForSelectedProject(thenLaunch: false)
+                        }
+                        .buttonStyle(.plain)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Color.orange)
+                    }
                     toolMenu
                         .controlFocusRing(focusedControl == .tool)
                         .accessibilityLabel("Agent: \(selectedTool?.displayName ?? "none")")
@@ -624,7 +649,6 @@ struct LauncherView: View {
     }
 
     private var canGo: Bool {
-        if showProjectPicker { return false }
         let hasPrompt = !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         switch mode {
         case .chat:
@@ -634,73 +658,32 @@ struct LauncherView: View {
             return hasPrompt && auth.isLoggedIn && board.selectedProject != nil
         case .agent:
             if isLaunching { return false }
-            let hasSession = selectedSessionID != nil
-            return hasPrompt || hasSession
+            if selectedSessionID != nil, !hasPrompt { return true }
+            let hasTaskMention = promptContainsTaskMention(prompt)
+            return (hasPrompt || hasTaskMention)
+                && auth.isLoggedIn
+                && board.selectedProject != nil
+                && linkedProjectPath != nil
         }
+    }
+
+    private func promptContainsTaskMention(_ text: String) -> Bool {
+        text.range(of: #"#task:[A-Za-z0-9\-]+"#, options: .regularExpression) != nil
     }
 
     private var promptPlaceholder: String {
         switch mode {
         case .chat: return "Ask anything…"
-        case .agent: return "Ask an agent…  @ for files"
+        case .agent: return "Ask an agent…  @ files · # tasks"
         case .board: return "Create a task…"
         }
     }
 
-    private var projectChip: some View {
-        Button {
-            withAnimation(.spring(response: 0.32, dampingFraction: 0.84)) {
-                showProjectPicker.toggle()
-                LauncherKeyRouter.shared.isProjectPickerOpen = showProjectPicker
-            }
-        } label: {
-            ChipLabel(
-                systemIcon: "folder.fill",
-                title: selectedProject?.name ?? "Project",
-                isActive: showProjectPicker
-            )
+    private var activeMentionListCount: Int {
+        switch activeMention {
+        case .task: return taskMentionResults.count
+        case .file, .none: return mentionResults.count
         }
-        .buttonStyle(.plain)
-        .keyboardShortcut("p", modifiers: [.command])
-        .help("Choose project (⌘P)")
-    }
-
-    private var projectPickerOverlay: some View {
-        ZStack(alignment: .topLeading) {
-            Color.black.opacity(0.28)
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    withAnimation(.easeOut(duration: 0.15)) {
-                        showProjectPicker = false
-                    }
-                    promptFocused = true
-                }
-
-            ProjectPickerView(
-                projects: settings.projects,
-                recentIDs: settings.recentProjectIDs,
-                selectedID: selectedProjectID,
-                onSelect: { project in
-                    selectedProjectID = project.id
-                    settings.markProjectUsed(project)
-                    closeProjectPicker()
-                },
-                onAdd: {
-                    addProjectFolders()
-                },
-                onManage: {
-                    showProjectPicker = false
-                    onOpenSettings()
-                },
-                onDismiss: {
-                    closeProjectPicker()
-                }
-            )
-            .padding(.leading, 18)
-            .padding(.top, 72)
-            .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .topLeading)))
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var toolMenu: some View {
@@ -845,22 +828,37 @@ struct LauncherView: View {
     private var mentionPopup: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 6) {
-                Text("Files")
+                Text(activeMention.flatMap { mention in
+                    switch mention {
+                    case .task: return "Tasks"
+                    case .file: return "Files"
+                    }
+                } ?? "Mentions")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.secondary)
                     .textCase(.uppercase)
-                if fileMentions.isIndexing {
-                    ProgressView().controlSize(.mini)
-                    Text("indexing…")
-                        .font(.system(size: 10))
-                        .foregroundStyle(.secondary)
-                } else if fileMentions.indexedCount > 0 {
-                    Text("\(fileMentions.indexedCount)")
-                        .font(.system(size: 10, weight: .medium, design: .rounded))
-                        .foregroundStyle(.secondary.opacity(0.7))
+                if case .file = activeMention {
+                    if fileMentions.isIndexing {
+                        ProgressView().controlSize(.mini)
+                        Text("indexing…")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                    } else if fileMentions.indexedCount > 0 {
+                        Text("\(fileMentions.indexedCount)")
+                            .font(.system(size: 10, weight: .medium, design: .rounded))
+                            .foregroundStyle(.secondary.opacity(0.7))
+                    }
+                } else if case .task = activeMention {
+                    if isSearchingTasks {
+                        ProgressView().controlSize(.mini)
+                    } else if !taskMentionResults.isEmpty {
+                        Text("\(taskMentionResults.count)")
+                            .font(.system(size: 10, weight: .medium, design: .rounded))
+                            .foregroundStyle(.secondary.opacity(0.7))
+                    }
                 }
                 Spacer()
-                Text("↵ select · fuzzy")
+                Text("↵ select")
                     .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(.secondary.opacity(0.7))
             }
@@ -870,44 +868,85 @@ struct LauncherView: View {
 
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 2) {
-                    ForEach(Array(mentionResults.prefix(12).enumerated()), id: \.element.id) { index, item in
-                        Button {
-                            mentionSelection = index
-                            confirmMention()
-                        } label: {
-                            HStack(spacing: 10) {
-                                Image(systemName: "doc.text")
-                                    .font(.system(size: 12))
-                                    .foregroundStyle(.secondary)
-                                    .frame(width: 18)
-                                VStack(alignment: .leading, spacing: 1) {
-                                    Text(item.name)
-                                        .font(.system(size: 13, weight: .medium))
-                                        .lineLimit(1)
-                                        .foregroundStyle(.primary)
-                                    Text("\(item.projectName) · \(item.relativePath)")
-                                        .font(.system(size: 11))
+                    if case .task = activeMention {
+                        ForEach(Array(taskMentionResults.prefix(12).enumerated()), id: \.element.id) { index, item in
+                            Button {
+                                mentionSelection = index
+                                confirmMention()
+                            } label: {
+                                HStack(spacing: 10) {
+                                    Image(systemName: "checklist")
+                                        .font(.system(size: 12))
                                         .foregroundStyle(.secondary)
-                                        .lineLimit(1)
+                                        .frame(width: 18)
+                                    VStack(alignment: .leading, spacing: 1) {
+                                        Text(item.task.title)
+                                            .font(.system(size: 13, weight: .medium))
+                                            .lineLimit(1)
+                                            .foregroundStyle(.primary)
+                                        Text(item.columnName)
+                                            .font(.system(size: 11))
+                                            .foregroundStyle(.secondary)
+                                            .lineLimit(1)
+                                    }
+                                    Spacer(minLength: 0)
                                 }
-                                Spacer(minLength: 0)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 7)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                        .fill(index == mentionSelection ? Color.white.opacity(0.12) : Color.clear)
+                                )
                             }
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 7)
-                            .background(
-                                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                    .fill(index == mentionSelection ? Color.white.opacity(0.12) : Color.clear)
-                            )
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
-                    }
+                        if taskMentionResults.isEmpty {
+                            Text(taskMentionEmptyLabel)
+                                .font(.system(size: 12))
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 10)
+                        }
+                    } else {
+                        ForEach(Array(mentionResults.prefix(12).enumerated()), id: \.element.id) { index, item in
+                            Button {
+                                mentionSelection = index
+                                confirmMention()
+                            } label: {
+                                HStack(spacing: 10) {
+                                    Image(systemName: "doc.text")
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(.secondary)
+                                        .frame(width: 18)
+                                    VStack(alignment: .leading, spacing: 1) {
+                                        Text(item.name)
+                                            .font(.system(size: 13, weight: .medium))
+                                            .lineLimit(1)
+                                            .foregroundStyle(.primary)
+                                        Text("\(item.projectName) · \(item.relativePath)")
+                                            .font(.system(size: 11))
+                                            .foregroundStyle(.secondary)
+                                            .lineLimit(1)
+                                    }
+                                    Spacer(minLength: 0)
+                                }
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 7)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                        .fill(index == mentionSelection ? Color.white.opacity(0.12) : Color.clear)
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
 
-                    if mentionResults.isEmpty, !fileMentions.isIndexing {
-                        Text(mentionQuery?.filter.isEmpty == false ? "No matches" : "Type to fuzzy-find files…")
-                            .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 10)
+                        if mentionResults.isEmpty, !fileMentions.isIndexing {
+                            Text(activeMention?.filter.isEmpty == false ? "No matches" : "Type to fuzzy-find files…")
+                                .font(.system(size: 12))
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 10)
+                        }
                     }
                 }
                 .padding(.horizontal, 6)
@@ -980,21 +1019,10 @@ struct LauncherView: View {
             .allowsHitTesting(mode == .agent)
             .accessibilityHidden(mode != .agent)
 
-            BoardModeView(
-                store: board,
-                auth: auth,
-                onSignIn: {
-                    if let onOpenAccountSettings {
-                        onOpenAccountSettings()
-                    } else {
-                        onOpenSettings()
-                    }
-                },
-                onOpenBoards: openBoards
-            )
-            .opacity(mode == .board ? 1 : 0)
-            .allowsHitTesting(mode == .board)
-            .accessibilityHidden(mode != .board)
+            boardModeLayer
+                .opacity(mode == .board ? 1 : 0)
+                .allowsHitTesting(mode == .board)
+                .accessibilityHidden(mode != .board)
 
             // Keep chat mounted after first open so agent→chat doesn't remount WKWebViews.
             if keepChatMounted || mode == .chat {
@@ -1011,6 +1039,31 @@ struct LauncherView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var boardModeLayer: some View {
+        VStack(spacing: 0) {
+            if let lastCreatedTask, mode == .board {
+                lastCreatedTaskBanner(lastCreatedTask)
+            }
+            BoardModeView(
+                store: board,
+                auth: auth,
+                onSignIn: openAccountOrSettings,
+                onOpenBoards: openBoards,
+                onStartAgent: { item in
+                    startAgent(for: item.task, columnName: item.column.name)
+                }
+            )
+        }
+    }
+
+    private func openAccountOrSettings() {
+        if let onOpenAccountSettings {
+            onOpenAccountSettings()
+        } else {
+            onOpenSettings()
+        }
     }
 
     // MARK: - Full terminal (→ / ↩ / after launch)
@@ -1128,7 +1181,7 @@ struct LauncherView: View {
 
     private var emptyState: some View {
         Group {
-            if settings.projects.isEmpty || !settings.hasCompletedOnboarding {
+            if !auth.isLoggedIn || !settings.hasCompletedOnboarding || settings.enabledTools.isEmpty {
                 setupEmptyState
             } else {
                 idleEmptyState
@@ -1143,12 +1196,12 @@ struct LauncherView: View {
                 .foregroundStyle(Color(red: 0.95, green: 0.36, blue: 0.28))
                 .opacity(0.95)
 
-            Text(settings.projects.isEmpty ? "Add a project to get started" : "Finish setup")
+            Text(!auth.isLoggedIn ? "Sign in to get started" : "Finish setup")
                 .font(.headline)
 
-            Text(settings.projects.isEmpty
-                 ? "Fastq needs at least one folder so agents know where to work."
-                 : "A couple of steps left — projects, tools, and window access.")
+            Text(!auth.isLoggedIn
+                 ? "Sign in to Fastplay, pick a project, and link its local folder so agents know where to work."
+                 : "Enable tools and link folders to your Fastplay projects in Boards.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -1156,9 +1209,21 @@ struct LauncherView: View {
 
             HStack(spacing: 10) {
                 Button {
-                    onOpenOnboarding?()
+                    if !auth.isLoggedIn {
+                        if let onOpenAccountSettings {
+                            onOpenAccountSettings()
+                        } else {
+                            onOpenSettings()
+                        }
+                    } else if !settings.hasCompletedOnboarding {
+                        onOpenOnboarding?()
+                    } else {
+                        onOpenBoards?()
+                    }
                 } label: {
-                    Text(settings.hasCompletedOnboarding ? "Add projects" : "Continue setup")
+                    Text(!auth.isLoggedIn
+                          ? "Sign in…"
+                          : (settings.hasCompletedOnboarding ? "Open Boards" : "Continue setup"))
                         .font(.system(size: 13, weight: .semibold))
                         .padding(.horizontal, 14)
                         .padding(.vertical, 8)
@@ -1356,7 +1421,6 @@ struct LauncherView: View {
     // MARK: - Actions
 
     private func submitPrimary() {
-        if showProjectPicker { return }
         switch mode {
         case .chat:
             sendChatMessage()
@@ -1391,16 +1455,52 @@ struct LauncherView: View {
         historyIndex = nil
         let files = attachments.map { URL(fileURLWithPath: $0.path) }
         do {
-            _ = try await board.createTaskFromLauncher(
+            let task = try await board.createTaskFromLauncher(
                 title: title,
                 columnID: board.selectedColumnID,
                 attachmentURLs: files
             )
+            rememberTask(task, columnName: board.selectedColumn?.name)
+            lastCreatedTask = task
             prompt = ""
             attachments = []
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    private func lastCreatedTaskBanner(_ task: FastplayTask) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(.green)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Created “\(task.title)”")
+                    .font(.system(size: 12, weight: .semibold))
+                    .lineLimit(1)
+                Text("Start an agent on this task?")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+            Button("Start agent") {
+                startAgent(for: task, columnName: board.selectedColumn?.name)
+                lastCreatedTask = nil
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+            Button {
+                lastCreatedTask = nil
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help("Dismiss")
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(Color.white.opacity(0.05))
     }
 
     private func sendChatMessage() {
@@ -1429,12 +1529,6 @@ struct LauncherView: View {
         if mode == .chat || !chat.messages.isEmpty {
             keepChatMounted = true
         }
-        if let recent = settings.recentProjectIDs.first,
-           settings.projects.contains(where: { $0.id == recent }) {
-            selectedProjectID = recent
-        } else {
-            selectedProjectID = settings.projects.first?.id
-        }
         selectedToolID = settings.defaultToolID ?? settings.enabledTools.first?.id
         selectedModel = settings.defaultModel
         selectedSessionID = sessions.sessions.first?.id
@@ -1454,16 +1548,13 @@ struct LauncherView: View {
         }
     }
 
-    private func closeProjectPicker() {
-        withAnimation(.easeOut(duration: 0.15)) {
-            showProjectPicker = false
-        }
-        focusPromptSoon()
-    }
-
     private func launchAgent() async {
         guard !isLaunching else { return }
-        guard let project = selectedProject else {
+        guard auth.isLoggedIn else {
+            errorMessage = AgentLaunchError.notSignedIn.localizedDescription
+            return
+        }
+        guard let project = board.selectedProject else {
             errorMessage = AgentLaunchError.missingProject.localizedDescription
             return
         }
@@ -1471,26 +1562,166 @@ struct LauncherView: View {
             errorMessage = AgentLaunchError.missingTool.localizedDescription
             return
         }
+        guard let projectPath = folders.path(for: project.id), folders.hasFolder(for: project.id) else {
+            linkFolderForSelectedProject(thenLaunch: true)
+            return
+        }
+
+        let linkedTasks = await resolveLinkedTasks(in: prompt)
+        let cleaned = AgentLauncher.stripTaskMentionTokens(from: prompt)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleaned.isEmpty || !linkedTasks.isEmpty || !attachments.isEmpty else {
+            errorMessage = "Add a prompt or mention a task with #."
+            return
+        }
 
         isLaunching = true
         defer { isLaunching = false }
 
+        let workspaceName = board.selectedWorkspace?.name ?? "Workspace"
+        let siblings = board.projects
+            .filter { $0.id != project.id }
+            .map { AgentWorkspaceSibling(name: $0.name, path: folders.path(for: $0.id)) }
+
         do {
             let session = try launcher.launch(
                 prompt: prompt,
-                project: project,
+                context: AgentLaunchContext(
+                    workspaceName: workspaceName,
+                    projectName: project.name,
+                    projectPath: projectPath,
+                    siblings: siblings,
+                    linkedTasks: linkedTasks
+                ),
                 tool: tool,
                 model: selectedModel,
-                attachments: attachments,
-                extraProjectPaths: settings.projects.map(\.path)
+                attachments: attachments
             )
-            settings.markProjectUsed(project)
             selectedSessionID = session.id
             prompt = ""
             attachments = []
+            lastCreatedTask = nil
             openSessionPreview()
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+
+    /// Resolve `#task:<id>` tokens against cache, board, then the tasks API.
+    private func resolveLinkedTasks(in text: String) async -> [AgentLinkedTask] {
+        let pattern = try! NSRegularExpression(pattern: "#task:([A-Za-z0-9\\-]+)")
+        let ns = text as NSString
+        let matches = pattern.matches(in: text, range: NSRange(location: 0, length: ns.length))
+        var tasks: [AgentLinkedTask] = []
+        var seen = Set<String>()
+        var missing: [String] = []
+
+        for match in matches {
+            guard match.numberOfRanges >= 2 else { continue }
+            let id = ns.substring(with: match.range(at: 1))
+            guard !seen.contains(id) else { continue }
+            seen.insert(id)
+            if let cached = taskMentionCache[id] {
+                tasks.append(cached)
+            } else if let item = board.flatTasks.first(where: { $0.task.id == id }) {
+                let linked = AgentLinkedTask(
+                    id: item.task.id,
+                    title: item.task.title,
+                    description: item.task.description,
+                    columnName: item.column.name,
+                    status: item.task.status,
+                    priority: item.task.priority
+                )
+                taskMentionCache[id] = linked
+                tasks.append(linked)
+            } else {
+                missing.append(id)
+            }
+        }
+
+        if !missing.isEmpty, auth.isLoggedIn {
+            do {
+                let remote = try await FastplayAPIClient.shared.listTasks(
+                    workspaceID: board.selectedWorkspaceID,
+                    projectID: board.selectedProjectID,
+                    perPage: 100
+                )
+                for task in remote {
+                    rememberTask(task)
+                }
+                for id in missing {
+                    if let cached = taskMentionCache[id] {
+                        tasks.append(cached)
+                    }
+                }
+            } catch {
+                // Keep whatever we already resolved from cache/board.
+            }
+        }
+        return tasks
+    }
+
+    private func rememberTask(_ task: FastplayTask, columnName: String? = nil) {
+        let item = TaskMentionItem(task: task, columnName: columnName)
+        taskMentionCache[task.id] = item.linkedTask
+    }
+
+    private func startAgent(for task: FastplayTask, columnName: String? = nil) {
+        rememberTask(task, columnName: columnName)
+        mode = .agent
+        settings.launcherMode = .agent
+        prompt = "#task:\(task.id) "
+        Task { await launchAgent() }
+    }
+
+    private func handleStartAgentForTask(_ note: Notification) async {
+        guard let linked = StartAgentForTask.linkedTask(from: note) else { return }
+        let info = note.userInfo ?? [:]
+        let autoLaunch = (info["autoLaunch"] as? Bool) ?? true
+
+        if auth.isLoggedIn, board.workspaces.isEmpty {
+            await board.bootstrap()
+        }
+        if let workspaceID = info["workspaceID"] as? String,
+           workspaceID != board.selectedWorkspaceID {
+            await board.selectWorkspace(workspaceID)
+        }
+        if let projectID = info["projectID"] as? String,
+           projectID != board.selectedProjectID {
+            await board.selectProject(projectID)
+        }
+
+        taskMentionCache[linked.id] = linked
+        mode = .agent
+        settings.launcherMode = .agent
+        prompt = "#task:\(linked.id) "
+        focusPromptSoon(caret: prompt.utf16.count)
+        if autoLaunch {
+            await launchAgent()
+        }
+    }
+
+    private func linkFolderForSelectedProject(thenLaunch: Bool) {
+        guard let project = board.selectedProject else {
+            errorMessage = AgentLaunchError.missingProject.localizedDescription
+            return
+        }
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Link Folder"
+        panel.message = "Link a local folder for “\(project.name)” so the agent can run there."
+        guard panel.runModal() == .OK, let url = panel.url else {
+            if thenLaunch {
+                errorMessage = AgentLaunchError.missingFolder.localizedDescription
+            }
+            return
+        }
+        folders.setPath(url.path, for: project.id)
+        refreshMentionIndex()
+        if thenLaunch {
+            Task { await launchAgent() }
         }
     }
 
@@ -1508,7 +1739,7 @@ struct LauncherView: View {
             return
         }
 
-        let path = selectedProject?.path ?? NSHomeDirectory()
+        let path = linkedProjectPath ?? NSHomeDirectory()
         guard let terminal = sessions.terminals.createShellSession(at: path) else {
             errorMessage = "Couldn’t start a terminal."
             return
@@ -1529,21 +1760,6 @@ struct LauncherView: View {
         return shells.last
     }
 
-    private func addProjectFolders() {
-        FolderPicker.chooseDirectories { urls in
-            guard !urls.isEmpty else { return }
-            var lastAdded: ProjectFolder?
-            for url in urls {
-                lastAdded = settings.addProjectReturning(url.path) ?? lastAdded
-            }
-            if let lastAdded {
-                selectedProjectID = lastAdded.id
-                settings.markProjectUsed(lastAdded)
-            }
-            // Picker stays open; Esc still dismisses it.
-        }
-    }
-
     private func pickAttachments() {
         FolderPicker.chooseFiles { urls in
             guard !urls.isEmpty else { return }
@@ -1562,19 +1778,18 @@ struct LauncherView: View {
     private func installKeyMonitors() {
         removeKeyMonitors()
 
-        let pickerBinding = $showProjectPicker
         let mentionVisibleBinding = $mentionVisible
-        let mentionQueryBinding = $mentionQuery
+        let activeMentionBinding = $activeMention
         let mentionResultsBinding = $mentionResults
-        LauncherKeyRouter.shared.isProjectPickerOpen = showProjectPicker
-        LauncherKeyRouter.shared.closePicker = {
-            pickerBinding.wrappedValue = false
-        }
+        let taskResultsBinding = $taskMentionResults
+        LauncherKeyRouter.shared.isProjectPickerOpen = false
+        LauncherKeyRouter.shared.closePicker = {}
         LauncherKeyRouter.shared.closeMentionPopup = {
             mentionVisibleBinding.wrappedValue = false
             LauncherKeyRouter.shared.isMentionPopupOpen = false
-            mentionQueryBinding.wrappedValue = nil
+            activeMentionBinding.wrappedValue = nil
             mentionResultsBinding.wrappedValue = []
+            taskResultsBinding.wrappedValue = []
             fileMentions.clearResults()
         }
         LauncherKeyRouter.shared.attachFiles = { [attachments = $attachments] urls in
@@ -1767,11 +1982,6 @@ struct LauncherView: View {
 
     private func activateControl(_ control: HeaderControl) {
         switch control {
-        case .project:
-            withAnimation(.spring(response: 0.32, dampingFraction: 0.84)) {
-                showProjectPicker = true
-                LauncherKeyRouter.shared.isProjectPickerOpen = true
-            }
         case .tool, .model, .workspace, .boardProject, .column:
             adjustControl(control, by: 1)
         case .attach:
@@ -1785,13 +1995,6 @@ struct LauncherView: View {
             ((index + delta) % count + count) % count
         }
         switch control {
-        case .project:
-            let projects = settings.projects
-            guard !projects.isEmpty else { return }
-            let index = projects.firstIndex(where: { $0.id == selectedProjectID }) ?? 0
-            let next = projects[wrapped(index, projects.count)]
-            selectedProjectID = next.id
-            settings.markProjectUsed(next)
         case .tool:
             let tools = settings.enabledTools
             guard !tools.isEmpty else { return }
@@ -1919,70 +2122,201 @@ struct LauncherView: View {
         }
     }
 
-    // MARK: - @ file mentions
+    // MARK: - @ file / # task mentions
+
+    private func linkedRootsForMentions() -> [(name: String, path: String)] {
+        board.projects.compactMap { project in
+            guard let path = folders.path(for: project.id) else { return nil }
+            return (project.name, path)
+        }
+    }
 
     private func refreshMentionIndex() {
         fileMentions.ensureIndexed(
-            projects: settings.projects,
-            primaryPath: selectedProject?.path
+            namedRoots: linkedRootsForMentions(),
+            primaryPath: linkedProjectPath
         )
     }
 
-    private func handleMentionQuery(_ query: PromptMentionQuery?) {
-        mentionQuery = query
-        guard let query else {
+    private func handleMentionQuery(_ mention: ActiveMention?) {
+        activeMention = mention
+        guard let mention else {
             mentionVisible = false
             LauncherKeyRouter.shared.isMentionPopupOpen = false
             fileMentions.clearResults()
             mentionResults = []
+            taskMentionResults = []
+            isSearchingTasks = false
             return
         }
-        // Index once in background; never rescan on every keystroke.
-        refreshMentionIndex()
         mentionVisible = true
         LauncherKeyRouter.shared.isMentionPopupOpen = true
-        // Fuzzy search off the main thread; results arrive via onChange.
-        fileMentions.query(query.filter, primaryPath: selectedProject?.path, limit: 40)
-        // Keep prior selection stable while results refresh.
-        if mentionResults.isEmpty {
-            mentionSelection = 0
+        switch mention {
+        case .file(let query):
+            taskMentionResults = []
+            isSearchingTasks = false
+            refreshMentionIndex()
+            fileMentions.query(query.filter, primaryPath: linkedProjectPath, limit: 40)
+            if mentionResults.isEmpty {
+                mentionSelection = 0
+            }
+        case .task(let query):
+            fileMentions.clearResults()
+            mentionResults = []
+            scheduleTaskMentionSearch(filter: query.filter)
+        }
+    }
+
+    private var taskMentionEmptyLabel: String {
+        if !auth.isLoggedIn { return "Sign in to browse tasks" }
+        if isSearchingTasks { return "Loading tasks…" }
+        if activeMention?.filter.isEmpty == false { return "No matching tasks" }
+        return "No tasks yet"
+    }
+
+    private func scheduleTaskMentionSearch(filter: String) {
+        taskSearchGeneration += 1
+        let generation = taskSearchGeneration
+        let local = localTaskMentionItems(matching: filter)
+        taskMentionResults = local
+        mentionSelection = 0
+
+        guard auth.isLoggedIn else {
+            isSearchingTasks = false
+            return
+        }
+
+        isSearchingTasks = true
+        Task {
+            // Empty `#` should feel instant; only debounce while typing a filter.
+            if !filter.isEmpty {
+                try? await Swift.Task.sleep(nanoseconds: 160_000_000)
+                guard generation == taskSearchGeneration else { return }
+            }
+
+            if board.board == nil || board.workspaces.isEmpty {
+                await board.bootstrap()
+                guard generation == taskSearchGeneration else { return }
+                let refreshedLocal = localTaskMentionItems(matching: filter)
+                if taskMentionResults.isEmpty, !refreshedLocal.isEmpty {
+                    taskMentionResults = refreshedLocal
+                }
+            }
+
+            do {
+                var remote = try await FastplayAPIClient.shared.listTasks(
+                    query: filter.isEmpty ? nil : filter,
+                    workspaceID: board.selectedWorkspaceID,
+                    projectID: board.selectedProjectID,
+                    perPage: 40
+                )
+                // If the selected project has nothing, still show workspace tasks
+                // so bare `#` always surfaces something useful.
+                if remote.isEmpty, board.selectedProjectID != nil {
+                    remote = try await FastplayAPIClient.shared.listTasks(
+                        query: filter.isEmpty ? nil : filter,
+                        workspaceID: board.selectedWorkspaceID,
+                        projectID: nil,
+                        perPage: 40
+                    )
+                }
+                guard generation == taskSearchGeneration else { return }
+                applyTaskMentionResults(remote: remote, local: localTaskMentionItems(matching: filter))
+            } catch {
+                // Prefer /api/search/tasks while /api/tasks is deploying.
+                do {
+                    let remote = try await FastplayAPIClient.shared.listTasksFallbackSearch(
+                        query: filter.isEmpty ? nil : filter,
+                        workspaceID: board.selectedWorkspaceID,
+                        projectID: board.selectedProjectID,
+                        perPage: 40
+                    )
+                    guard generation == taskSearchGeneration else { return }
+                    applyTaskMentionResults(remote: remote, local: localTaskMentionItems(matching: filter))
+                } catch {
+                    // Keep local board results already shown.
+                }
+            }
+            if generation == taskSearchGeneration {
+                isSearchingTasks = false
+            }
+        }
+    }
+
+    private func localTaskMentionItems(matching filter: String) -> [TaskMentionItem] {
+        board.flatTasks
+            .map { TaskMentionItem(column: $0.column, task: $0.task) }
+            .filter { filter.isEmpty || $0.task.title.localizedCaseInsensitiveContains(filter) }
+    }
+
+    private func applyTaskMentionResults(remote: [FastplayTask], local: [TaskMentionItem]) {
+        var merged: [TaskMentionItem] = []
+        var seen = Set<String>()
+        for task in remote {
+            rememberTask(task)
+            let item = TaskMentionItem(task: task)
+            if seen.insert(item.id).inserted {
+                merged.append(item)
+            }
+        }
+        for item in local where seen.insert(item.id).inserted {
+            merged.append(item)
+        }
+        taskMentionResults = merged
+        if mentionSelection >= merged.count {
+            mentionSelection = max(0, merged.count - 1)
         }
     }
 
     private func confirmMention() {
-        let list = fileMentions.results.isEmpty ? mentionResults : fileMentions.results
-        guard mentionVisible,
-              let query = mentionQuery,
-              list.indices.contains(mentionSelection) else {
+        guard mentionVisible, let mention = activeMention else {
             mentionVisible = false
             LauncherKeyRouter.shared.isMentionPopupOpen = false
             return
         }
-        let item = list[mentionSelection]
         let ns = prompt as NSString
-        guard NSMaxRange(query.range) <= ns.length else {
+        guard NSMaxRange(mention.range) <= ns.length else {
             mentionVisible = false
             LauncherKeyRouter.shared.isMentionPopupOpen = false
             return
         }
 
         let insertion: String
-        if let primary = selectedProject?.path, item.path.hasPrefix(primary + "/") {
-            insertion = "@" + item.relativePath
-        } else {
-            insertion = "@\(item.projectName)/\(item.relativePath)"
+        switch mention {
+        case .file:
+            let list = fileMentions.results.isEmpty ? mentionResults : fileMentions.results
+            guard list.indices.contains(mentionSelection) else {
+                mentionVisible = false
+                LauncherKeyRouter.shared.isMentionPopupOpen = false
+                return
+            }
+            let item = list[mentionSelection]
+            if let primary = linkedProjectPath, item.path.hasPrefix(primary + "/") {
+                insertion = "@" + item.relativePath
+            } else {
+                insertion = "@\(item.projectName)/\(item.relativePath)"
+            }
+        case .task:
+            guard taskMentionResults.indices.contains(mentionSelection) else {
+                mentionVisible = false
+                LauncherKeyRouter.shared.isMentionPopupOpen = false
+                return
+            }
+            let item = taskMentionResults[mentionSelection]
+            rememberTask(item.task, columnName: item.columnName)
+            insertion = "#task:\(item.task.id)"
         }
 
-        let replaced = ns.replacingCharacters(in: query.range, with: insertion + " ")
+        let replaced = ns.replacingCharacters(in: mention.range, with: insertion + " ")
         prompt = replaced
         mentionVisible = false
         LauncherKeyRouter.shared.isMentionPopupOpen = false
-        mentionQuery = nil
+        activeMention = nil
         mentionResults = []
+        taskMentionResults = []
+        isSearchingTasks = false
         fileMentions.clearResults()
-        // Caret right after the inserted "@mention " so typing continues —
-        // never select-all (a following keystroke would wipe the prompt).
-        focusPromptSoon(caret: query.range.location + (insertion + " ").utf16.count)
+        focusPromptSoon(caret: mention.range.location + (insertion + " ").utf16.count)
     }
 }
 

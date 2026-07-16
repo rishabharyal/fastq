@@ -4,6 +4,7 @@ import AppKit
 struct SettingsView: View {
     @ObservedObject var settings: AppSettings
     @ObservedObject var auth: FastplayAuthStore
+    @ObservedObject private var folders = ProjectFolderStore.shared
     var initialTab: SettingsTab = .projects
     var onReplayOnboarding: (() -> Void)?
 
@@ -104,34 +105,40 @@ struct SettingsView: View {
     }
 
     private var projectsTab: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("Configured folders")
-                    .font(.headline)
-                Spacer()
-                Button("Add Folder…", action: addFolder)
-            }
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Linked folders")
+                .font(.headline)
+            Text("Each Fastplay project can link to a local folder. Agents run in that folder. Manage links in Boards (⌘B) on the selected project.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
 
-            if settings.projects.isEmpty {
+            if folders.pathsByProjectID.isEmpty {
                 ContentUnavailableView(
-                    "No projects yet",
-                    systemImage: "folder.badge.plus",
-                    description: Text("Add repositories or folders you want agents to open into.")
+                    "No folders linked",
+                    systemImage: "folder.badge.questionmark",
+                    description: Text("Open Boards, select a project, and choose Link folder…")
                 )
             } else {
                 List {
-                    ForEach(settings.projects) { project in
+                    ForEach(folders.pathsByProjectID.keys.sorted(), id: \.self) { projectID in
+                        let path = folders.pathsByProjectID[projectID] ?? ""
                         HStack {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(project.name).font(.body.weight(.medium))
-                                Text(project.path)
+                                Text(URL(fileURLWithPath: path).lastPathComponent)
+                                    .font(.body.weight(.medium))
+                                Text(path)
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                Text(projectID)
+                                    .font(.system(size: 10, design: .monospaced))
+                                    .foregroundStyle(.tertiary)
                                     .lineLimit(1)
                             }
                             Spacer()
                             Button(role: .destructive) {
-                                settings.removeProject(project)
+                                folders.clear(for: projectID)
                             } label: {
                                 Image(systemName: "trash")
                             }
@@ -265,13 +272,5 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .padding(8)
-    }
-
-    private func addFolder() {
-        FolderPicker.chooseDirectories { urls in
-            for url in urls {
-                settings.addProject(path: url.path)
-            }
-        }
     }
 }

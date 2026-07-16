@@ -30,7 +30,7 @@ enum AgentActivityRegistry {
         switch kind {
         case .claudeCode:
             return ClaudeCodeActivityAdapter()
-        case .cursorCLI, .codexCLI, .grokAgent, .openCode:
+        case .cursorCLI, .codexCLI, .grokAgent, .openCode, .shell:
             // Same path as unknown tools today — Terminal heuristics + OSC contract.
             // Add a dedicated adapter when the vendor exposes hooks/flags.
             return DefaultActivityAdapter(toolID: kind.rawValue)

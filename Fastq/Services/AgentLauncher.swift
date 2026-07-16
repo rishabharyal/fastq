@@ -1,6 +1,28 @@
 import Foundation
 import AppKit
 
+struct AgentWorkspaceSibling: Equatable {
+    var name: String
+    var path: String?
+}
+
+struct AgentLinkedTask: Equatable {
+    var id: String
+    var title: String
+    var description: String?
+    var columnName: String?
+    var status: String?
+    var priority: String?
+}
+
+struct AgentLaunchContext: Equatable {
+    var workspaceName: String
+    var projectName: String
+    var projectPath: String
+    var siblings: [AgentWorkspaceSibling]
+    var linkedTasks: [AgentLinkedTask]
+}
+
 @MainActor
 final class AgentLauncher {
     private let settings: AppSettings
@@ -13,18 +35,22 @@ final class AgentLauncher {
 
     func launch(
         prompt: String,
-        project: ProjectFolder,
+        context: AgentLaunchContext,
         tool: ToolConfig,
         model: AgentModelOption,
-        attachments: [PromptAttachment],
-        extraProjectPaths: [String] = []
+        attachments: [PromptAttachment]
     ) throws -> AgentSession {
-        let composedPrompt = composePrompt(prompt: prompt, attachments: attachments)
+        let composedPrompt = composePrompt(
+            prompt: prompt,
+            attachments: attachments,
+            context: context
+        )
+        let extraPaths = context.siblings.compactMap(\.path).filter { $0 != context.projectPath }
         var session = AgentSession(
             id: UUID(),
             tool: tool.kind,
-            projectName: project.name,
-            projectPath: project.path,
+            projectName: context.projectName,
+            projectPath: context.projectPath,
             promptPreview: prompt,
             model: model,
             startedAt: Date(),
@@ -40,16 +66,16 @@ final class AgentLauncher {
                 command: tool.commandPath,
                 prompt: composedPrompt,
                 model: model,
-                projectPath: project.path,
-                extraProjectPaths: extraProjectPaths
+                projectPath: context.projectPath,
+                extraProjectPaths: extraPaths
             )
             // Codex boots a cleaner full TUI when the prompt is typed after start.
             let injectPrompt = tool.kind == .codexCLI
             let terminal = try sessions.terminals.create(from: CreateSessionRequest(
                 sessionID: session.id,
                 title: session.title,
-                projectName: project.name,
-                projectPath: project.path,
+                projectName: context.projectName,
+                projectPath: context.projectPath,
                 command: commandLine,
                 prompt: injectPrompt ? composedPrompt : "",
                 tool: tool.kind.rawValue
@@ -83,12 +109,80 @@ final class AgentLauncher {
 
     // MARK: - Prompt
 
-    private func composePrompt(prompt: String, attachments: [PromptAttachment]) -> String {
-        guard !attachments.isEmpty else { return prompt }
-        let lines = attachments.map { attachment in
-            "Attachment: \(attachment.path)"
+    private func composePrompt(
+        prompt: String,
+        attachments: [PromptAttachment],
+        context: AgentLaunchContext
+    ) -> String {
+        var sections: [String] = []
+
+        var workspaceLines = [
+            "## Fastq workspace context",
+            "Workspace: \(context.workspaceName)",
+            "Active project: \(context.projectName) (\(context.projectPath))",
+        ]
+        if context.siblings.isEmpty {
+            workspaceLines.append("Related projects in this workspace: (none)")
+        } else {
+            workspaceLines.append("Related projects in this workspace:")
+            for sibling in context.siblings {
+                let pathNote = sibling.path ?? "no local folder"
+                workspaceLines.append("- \(sibling.name) (\(pathNote))")
+            }
         }
-        return prompt + "\n\n" + lines.joined(separator: "\n")
+        sections.append(workspaceLines.joined(separator: "\n"))
+
+        if !context.linkedTasks.isEmpty {
+            var taskLines = ["## Linked task"]
+            for task in context.linkedTasks {
+                taskLines.append("Title: \(task.title)")
+                if let column = task.columnName, !column.isEmpty {
+                    taskLines.append("Column: \(column)")
+                }
+                if let status = task.status, !status.isEmpty {
+                    taskLines.append("Status: \(status)")
+                }
+                if let priority = task.priority, !priority.isEmpty {
+                    taskLines.append("Priority: \(priority)")
+                }
+                if let description = task.description?.trimmingCharacters(in: .whitespacesAndNewlines),
+                   !description.isEmpty {
+                    taskLines.append("Description:\n\(description)")
+                }
+                taskLines.append("")
+            }
+            sections.append(taskLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines))
+        }
+
+        let cleanedPrompt = Self.stripTaskMentionTokens(from: prompt)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        var requestParts: [String] = []
+        if cleanedPrompt.isEmpty, !context.linkedTasks.isEmpty {
+            requestParts.append(
+                context.linkedTasks.count == 1
+                    ? "Please work on the linked task."
+                    : "Please work on the linked tasks."
+            )
+        } else if !cleanedPrompt.isEmpty {
+            requestParts.append(cleanedPrompt)
+        }
+        if !attachments.isEmpty {
+            requestParts.append(contentsOf: attachments.map { "Attachment: \($0.path)" })
+        }
+        if !requestParts.isEmpty {
+            sections.append("## User request\n" + requestParts.joined(separator: "\n\n"))
+        }
+
+        return sections.joined(separator: "\n\n")
+    }
+
+    /// Remove `#task:<id>` tokens so the agent sees prose + linked-task context.
+    static func stripTaskMentionTokens(from text: String) -> String {
+        let pattern = try! NSRegularExpression(pattern: "#task:[A-Za-z0-9\\-]+")
+        let ns = text as NSString
+        let range = NSRange(location: 0, length: ns.length)
+        return pattern.stringByReplacingMatches(in: text, range: range, withTemplate: "")
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
     }
 
     // MARK: - CLI agents (local PTY)
@@ -231,13 +325,17 @@ final class AgentLauncher {
 enum AgentLaunchError: LocalizedError {
     case scriptFailed(String)
     case missingProject
+    case missingFolder
     case missingTool
+    case notSignedIn
 
     var errorDescription: String? {
         switch self {
         case .scriptFailed(let message): return message
-        case .missingProject: return "Choose a project folder first."
+        case .missingProject: return "Choose a Fastplay project first."
+        case .missingFolder: return "Link a local folder to this project before launching an agent."
         case .missingTool: return "Choose an agent tool first."
+        case .notSignedIn: return "Sign in to Fastplay to launch agents on a project."
         }
     }
 }

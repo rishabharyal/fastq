@@ -28,7 +28,11 @@ final class FileMentionIndex: ObservableObject {
     private var searchTask: Task<Void, Never>?
 
     func ensureIndexed(projects: [ProjectFolder], primaryPath: String?) {
-        let roots = projects.map(\.path).sorted()
+        ensureIndexed(namedRoots: projects.map { ($0.name, $0.path) }, primaryPath: primaryPath)
+    }
+
+    func ensureIndexed(namedRoots: [(name: String, path: String)], primaryPath: String?) {
+        let roots = namedRoots.map(\.path).sorted()
         guard roots != indexedRoots || indexedCount == 0 else { return }
 
         indexGeneration += 1
@@ -36,7 +40,7 @@ final class FileMentionIndex: ObservableObject {
         indexedRoots = roots
         isIndexing = true
 
-        let snapshot: [(name: String, path: String)] = projects.map { ($0.name, $0.path) }
+        let snapshot = namedRoots
         Task(priority: .utility) {
             await engine.reindex(projects: snapshot)
             let count = await engine.count

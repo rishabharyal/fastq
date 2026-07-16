@@ -67,6 +67,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         panelController.setup()
 
+        NotificationCenter.default.addObserver(
+            forName: StartAgentForTask.notification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.boardController?.close()
+                self?.panelController.show()
+            }
+        }
+
         Task { await auth.restoreSession() }
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in

@@ -129,6 +129,74 @@ actor FastplayAPIClient {
         try await getAuthed("/api/workspaces/\(enc(workspace))/projects/\(enc(project))/board")
     }
 
+    /// List/filter tasks visible to the logged-in user across their workspaces.
+    /// - Parameters:
+    ///   - query: Optional title/description search (`q`)
+    ///   - workspaceID: Narrow to one workspace
+    ///   - projectID: Narrow to one project
+    ///   - perPage: Page size (1…100)
+    func listTasks(
+        query: String? = nil,
+        workspaceID: String? = nil,
+        projectID: String? = nil,
+        perPage: Int = 40
+    ) async throws -> [FastplayTask] {
+        let items = taskListQueryItems(
+            query: query,
+            workspaceID: workspaceID,
+            projectID: projectID,
+            perPage: perPage
+        )
+        do {
+            return try await getAuthed("/api/tasks", queryItems: items)
+        } catch {
+            // Alias may still be deploying — fall back to the older search route.
+            return try await getAuthed("/api/search/tasks", queryItems: items)
+        }
+    }
+
+    /// Explicit fallback used by the mention popup if the primary list call fails.
+    func listTasksFallbackSearch(
+        query: String? = nil,
+        workspaceID: String? = nil,
+        projectID: String? = nil,
+        perPage: Int = 40
+    ) async throws -> [FastplayTask] {
+        try await getAuthed(
+            "/api/search/tasks",
+            queryItems: taskListQueryItems(
+                query: query,
+                workspaceID: workspaceID,
+                projectID: projectID,
+                perPage: perPage
+            )
+        )
+    }
+
+    private func taskListQueryItems(
+        query: String?,
+        workspaceID: String?,
+        projectID: String?,
+        perPage: Int
+    ) -> [URLQueryItem] {
+        var items: [URLQueryItem] = [
+            URLQueryItem(name: "per_page", value: String(min(max(perPage, 1), 100))),
+        ]
+        if let query {
+            let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                items.append(URLQueryItem(name: "q", value: trimmed))
+            }
+        }
+        if let workspaceID, !workspaceID.isEmpty {
+            items.append(URLQueryItem(name: "workspace_id", value: workspaceID))
+        }
+        if let projectID, !projectID.isEmpty {
+            items.append(URLQueryItem(name: "project_id", value: projectID))
+        }
+        return items
+    }
+
     func createTask(
         workspace: String,
         project: String,
@@ -231,8 +299,8 @@ actor FastplayAPIClient {
         value.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? value
     }
 
-    private func getAuthed<T: Decodable>(_ path: String) async throws -> T {
-        try await request(path, method: "GET", bodyData: nil, authed: true)
+    private func getAuthed<T: Decodable>(_ path: String, queryItems: [URLQueryItem] = []) async throws -> T {
+        try await request(path, method: "GET", bodyData: nil, authed: true, queryItems: queryItems)
     }
 
     private func postAuthed<T: Decodable, B: Encodable>(_ path: String, body: B) async throws -> T {
@@ -284,9 +352,16 @@ actor FastplayAPIClient {
         method: String,
         bodyData: Data?,
         authed: Bool,
+        queryItems: [URLQueryItem] = [],
         didRefresh: Bool = false
     ) async throws -> T {
-        let full = URL(string: path, relativeTo: Self.baseURL)!.absoluteURL
+        var components = URLComponents(url: URL(string: path, relativeTo: Self.baseURL)!.absoluteURL, resolvingAgainstBaseURL: false)!
+        if !queryItems.isEmpty {
+            components.queryItems = queryItems
+        }
+        guard let full = components.url else {
+            throw FastplayAPIError.message("Invalid request URL.")
+        }
 
         var req = URLRequest(url: full)
         req.httpMethod = method
@@ -307,7 +382,14 @@ actor FastplayAPIClient {
 
         if http.statusCode == 401, authed, !didRefresh {
             _ = try await refreshTokens()
-            return try await request(path, method: method, bodyData: bodyData, authed: authed, didRefresh: true)
+            return try await request(
+                path,
+                method: method,
+                bodyData: bodyData,
+                authed: authed,
+                queryItems: queryItems,
+                didRefresh: true
+            )
         }
 
         return try decodeResponse(data: data, status: http.statusCode)

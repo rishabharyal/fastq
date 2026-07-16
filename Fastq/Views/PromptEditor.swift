@@ -6,14 +6,31 @@ extension Notification.Name {
 }
 
 struct PromptMentionQuery: Equatable {
-    /// Text after `@` (may be empty).
+    /// Text after `@` or `#` (may be empty).
     var filter: String
-    /// UTF-16 range of `@…` in the prompt (including the `@`).
+    /// UTF-16 range of the token in the prompt (including the trigger).
     var range: NSRange
 }
 
+enum ActiveMention: Equatable {
+    case file(PromptMentionQuery)
+    case task(PromptMentionQuery)
+
+    var filter: String {
+        switch self {
+        case .file(let q), .task(let q): return q.filter
+        }
+    }
+
+    var range: NSRange {
+        switch self {
+        case .file(let q), .task(let q): return q.range
+        }
+    }
+}
+
 /// Multiline prompt field: Return submits, Shift+Return inserts a newline.
-/// Typing `@` surfaces a file-mention query to the parent.
+/// Typing `@` surfaces file mentions; `#` surfaces task mentions.
 struct PromptEditor: NSViewRepresentable {
     @Binding var text: String
     var placeholder: String
@@ -23,7 +40,7 @@ struct PromptEditor: NSViewRepresentable {
     /// True while mic dictation streams into `text` — keeps the caret at the end.
     var isDictating: Bool = false
     var onSubmit: () -> Void
-    var onMentionQueryChange: (PromptMentionQuery?) -> Void
+    var onMentionQueryChange: (ActiveMention?) -> Void
     var onMentionNavigate: ((Int) -> Void)?
     var onMentionConfirm: (() -> Void)?
     var onMentionCancel: (() -> Void)?
@@ -186,7 +203,9 @@ struct PromptEditor: NSViewRepresentable {
                 let length = textView.string.utf16.count
                 if let caret {
                     textView.setSelectedRange(NSRange(location: min(max(caret, 0), length), length: 0))
-                } else if selectAll, !textView.string.isEmpty {
+                } else if selectAll, !textView.string.isEmpty, Self.activeMention(in: textView) == nil {
+                    // Fresh summon selects existing prompt text — but never
+                    // while the user is mid `@` / `#` mention.
                     textView.selectAll(nil)
                 } else {
                     textView.setSelectedRange(NSRange(location: length, length: 0))
@@ -207,7 +226,7 @@ struct PromptEditor: NSViewRepresentable {
             parent.text = textView.string
             applyMentionHighlight()
             reportHeight()
-            parent.onMentionQueryChange(Self.mentionQuery(in: textView))
+            parent.onMentionQueryChange(Self.activeMention(in: textView))
         }
 
         func reportHeight() {
@@ -220,9 +239,7 @@ struct PromptEditor: NSViewRepresentable {
             parent.onHeightChange?(height)
         }
 
-        /// Tint `@file` mentions so they read as tokens, not prose. Uses
-        /// layout-manager temporary attributes: purely visual, never touches
-        /// the plain string that gets submitted.
+        /// Tint `@file` / `#task` mentions so they read as tokens, not prose.
         func applyMentionHighlight() {
             guard let textView, let layoutManager = textView.layoutManager else { return }
             let ns = textView.string as NSString
@@ -230,8 +247,6 @@ struct PromptEditor: NSViewRepresentable {
             layoutManager.removeTemporaryAttribute(.foregroundColor, forCharacterRange: full)
             Self.mentionTokenRegex.enumerateMatches(in: textView.string, range: full) { match, _, _ in
                 guard let range = match?.range else { return }
-                // Token must start the text or follow whitespace (same rule
-                // as the live mention query) — emails etc. stay untinted.
                 if range.location > 0 {
                     let prev = ns.character(at: range.location - 1)
                     guard let scalar = UnicodeScalar(prev),
@@ -245,41 +260,52 @@ struct PromptEditor: NSViewRepresentable {
             }
         }
 
-        private static let mentionTokenRegex = try! NSRegularExpression(pattern: "@[^\\s@]+")
+        private static let mentionTokenRegex = try! NSRegularExpression(pattern: "[@#][^\\s@#]+")
 
         func textViewDidChangeSelection(_ notification: Notification) {
             guard let textView else { return }
-            parent.onMentionQueryChange(Self.mentionQuery(in: textView))
+            parent.onMentionQueryChange(Self.activeMention(in: textView))
         }
 
         static func mentionQuery(in textView: NSTextView) -> PromptMentionQuery? {
-            let string = textView.string as NSString
-            let cursor = textView.selectedRange().location
-            guard cursor != NSNotFound, cursor <= string.length else { return nil }
+            activeMention(in: textView).map { mention in
+                switch mention {
+                case .file(let q), .task(let q): return q
+                }
+            }
+        }
 
-            // Walk left from caret to find an active `@token`.
+        static func activeMention(in textView: NSTextView) -> ActiveMention? {
+            let string = textView.string as NSString
+            let selected = textView.selectedRange()
+            guard selected.location != NSNotFound else { return nil }
+            // Use the typing end of the selection. Select-All after typing `#`
+            // leaves location at 0; using that alone would kill the mention.
+            let cursor = selected.length == 0 ? selected.location : NSMaxRange(selected)
+            guard cursor <= string.length else { return nil }
+
             var i = cursor
             while i > 0 {
                 let ch = string.character(at: i - 1)
-                if ch == UInt16(UnicodeScalar("@").value) {
-                    let atIndex = i - 1
-                    // `@` must start a token (start or after whitespace/newline).
-                    if atIndex > 0 {
-                        let prev = string.character(at: atIndex - 1)
+                let isAt = ch == UInt16(UnicodeScalar("@").value)
+                let isHash = ch == UInt16(UnicodeScalar("#").value)
+                if isAt || isHash {
+                    let triggerIndex = i - 1
+                    if triggerIndex > 0 {
+                        let prev = string.character(at: triggerIndex - 1)
                         if let scalar = UnicodeScalar(prev),
-                           !CharacterSet.whitespacesAndNewlines.contains(scalar),
-                           scalar != "\n" {
+                           !CharacterSet.whitespacesAndNewlines.contains(scalar) {
                             return nil
                         }
                     }
-                    let filterRange = NSRange(location: atIndex + 1, length: cursor - (atIndex + 1))
+                    let filterRange = NSRange(location: triggerIndex + 1, length: cursor - (triggerIndex + 1))
                     let filter = string.substring(with: filterRange)
-                    // Stop mention if filter contains whitespace (token ended).
                     if filter.contains(where: { $0.isWhitespace }) {
                         return nil
                     }
-                    let fullRange = NSRange(location: atIndex, length: cursor - atIndex)
-                    return PromptMentionQuery(filter: filter, range: fullRange)
+                    let fullRange = NSRange(location: triggerIndex, length: cursor - triggerIndex)
+                    let query = PromptMentionQuery(filter: filter, range: fullRange)
+                    return isHash ? .task(query) : .file(query)
                 }
                 if let scalar = UnicodeScalar(ch), CharacterSet.whitespacesAndNewlines.contains(scalar) {
                     return nil

@@ -142,6 +142,23 @@ struct FastplayColumn: Codable, Identifiable, Equatable, Hashable {
     var tasks: [FastplayTask]
 }
 
+struct FastplayTaskColumnRef: Codable, Equatable, Hashable {
+    var id: String
+    var name: String
+}
+
+struct FastplayTaskProjectRef: Codable, Equatable, Hashable {
+    var id: String
+    var name: String
+    var slug: String?
+    var workspaceID: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, slug
+        case workspaceID = "workspace_id"
+    }
+}
+
 struct FastplayTask: Codable, Identifiable, Equatable, Hashable {
     var id: String
     var title: String
@@ -152,12 +169,52 @@ struct FastplayTask: Codable, Identifiable, Equatable, Hashable {
     var boardColumnID: String?
     var projectID: String?
     var dueDate: String?
+    /// Present on list/search responses when the API eager-loads the column.
+    var column: FastplayTaskColumnRef?
+    /// Present on list/search responses when the API eager-loads the project.
+    var project: FastplayTaskProjectRef?
 
     enum CodingKeys: String, CodingKey {
-        case id, title, description, status, priority, position
+        case id, title, description, status, priority, position, column, project
         case boardColumnID = "board_column_id"
         case projectID = "project_id"
         case dueDate = "due_date"
+    }
+
+    var resolvedColumnName: String? {
+        if let name = column?.name, !name.isEmpty { return name }
+        return nil
+    }
+}
+
+/// One row in the `#` task mention popup.
+struct TaskMentionItem: Identifiable, Equatable, Hashable {
+    var id: String { task.id }
+    var task: FastplayTask
+    var columnName: String
+
+    init(task: FastplayTask, columnName: String? = nil) {
+        self.task = task
+        self.columnName = columnName
+            ?? task.resolvedColumnName
+            ?? task.status
+            ?? "Task"
+    }
+
+    init(column: FastplayColumn, task: FastplayTask) {
+        self.task = task
+        self.columnName = column.name
+    }
+
+    var linkedTask: AgentLinkedTask {
+        AgentLinkedTask(
+            id: task.id,
+            title: task.title,
+            description: task.description,
+            columnName: columnName,
+            status: task.status,
+            priority: task.priority
+        )
     }
 }
 

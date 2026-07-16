@@ -297,3 +297,31 @@ struct AgentSession: Identifiable, Hashable {
         }
     }
 }
+
+/// Agent turn state mirrored from OSC titles / PTY heuristics.
+enum AgentActivity: String, Codable, Sendable, Hashable {
+    case idle
+    case working
+    case waiting
+    case done
+
+    static let titlePrefix = "fastq:"
+
+    static func parseTitle(_ title: String) -> AgentActivity? {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.hasPrefix(titlePrefix) else { return nil }
+        let raw = String(trimmed.dropFirst(titlePrefix.count)).lowercased()
+        let token = raw.split(whereSeparator: { $0 == " " || $0 == "·" || $0 == "|" }).first
+            .map(String.init) ?? raw
+        return AgentActivity(rawValue: token)
+    }
+
+    var launcherLabel: String {
+        switch self {
+        case .idle: return "Running"
+        case .working: return "Working"
+        case .waiting: return "Needs you"
+        case .done: return "Done"
+        }
+    }
+}
