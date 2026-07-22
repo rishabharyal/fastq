@@ -26,6 +26,8 @@ final class AgentChatSession: ObservableObject, Identifiable {
     let projectName: String
     let projectPath: String
     var model: AgentModelOption
+    /// Fastplay workspace/project/task this conversation belongs to.
+    var taskLink: AgentTaskLink?
 
     @Published var items: [AgentChatItem] = []
     @Published var phase: Phase = .idle
@@ -52,13 +54,15 @@ final class AgentChatSession: ObservableObject, Identifiable {
         tool: AgentToolKind,
         projectName: String,
         projectPath: String,
-        model: AgentModelOption
+        model: AgentModelOption,
+        taskLink: AgentTaskLink? = nil
     ) {
         self.id = id
         self.tool = tool
         self.projectName = projectName
         self.projectPath = projectPath
         self.model = model
+        self.taskLink = taskLink
     }
 
     var isBusy: Bool { phase == .running || phase == .waitingForUser }
@@ -112,17 +116,18 @@ final class AgentChatSession: ObservableObject, Identifiable {
             isStreamingText = false
             statusLine = nil
 
-        case .toolStarted(let id, let name, let summary, let isSubagent):
+        case .toolStarted(let id, let name, let summary, let isSubagent, let detail):
             guard !knownToolIDs.contains(id) else { break }
             knownToolIDs.insert(id)
             isStreamingText = false
-            let record = ToolCallRecord(
+            var record = ToolCallRecord(
                 id: id,
                 name: ClaudeHeadlessEngine.toolDisplayName(name),
                 summary: summary,
                 startedAt: Date(),
                 isSubagent: isSubagent
             )
+            record.apply(detail: detail ?? ToolCallDetail(kind: ToolDetailKind.infer(toolName: name)))
             if case .toolCalls(var calls) = items.last?.kind {
                 calls.append(record)
                 items[items.count - 1].kind = .toolCalls(calls)
@@ -131,12 +136,15 @@ final class AgentChatSession: ObservableObject, Identifiable {
             }
             statusLine = "Running \(record.name)…"
 
-        case .toolFinished(let id, let ok):
+        case .toolFinished(let id, let ok, let resultText):
             for index in items.indices.reversed() {
                 guard case .toolCalls(var calls) = items[index].kind,
                       let callIndex = calls.firstIndex(where: { $0.id == id }) else { continue }
                 calls[callIndex].finishedAt = Date()
                 calls[callIndex].ok = ok
+                if let resultText, !resultText.isEmpty {
+                    calls[callIndex].resultText = ToolDetailLimits.cap(resultText, ToolDetailLimits.result)
+                }
                 items[index].kind = .toolCalls(calls)
                 break
             }
@@ -244,7 +252,8 @@ final class AgentChatStore: ObservableObject {
         model: AgentModelOption,
         prompt: String,
         displayText: String,
-        attachments: [String]
+        attachments: [String],
+        taskLink: AgentTaskLink? = nil
     ) throws -> AgentChatSession {
         guard HeadlessToolResolver.resolve(tool, settings: settings) != nil else {
             throw AgentLaunchError.scriptFailed("\(tool.displayName) CLI not found. Install it or set its path in Settings → Tools.")
@@ -254,7 +263,8 @@ final class AgentChatStore: ObservableObject {
             tool: tool,
             projectName: projectName,
             projectPath: projectPath,
-            model: model
+            model: model,
+            taskLink: taskLink?.normalized
         )
         sessions.insert(session, at: 0)
         session.appendUser(text: displayText, attachments: attachments)
@@ -569,6 +579,48 @@ final class AgentChatStore: ObservableObject {
         var items: [AgentChatItem]
         var phase: AgentChatSession.Phase
         var costUSD: Double?
+        /// Added after the first shipping format — absent in older files.
+        var taskLink: AgentTaskLink?
+
+        init(
+            id: UUID,
+            tool: AgentToolKind,
+            projectName: String,
+            projectPath: String,
+            model: AgentModelOption,
+            engineSessionID: String?,
+            items: [AgentChatItem],
+            phase: AgentChatSession.Phase,
+            costUSD: Double?,
+            taskLink: AgentTaskLink?
+        ) {
+            self.id = id
+            self.tool = tool
+            self.projectName = projectName
+            self.projectPath = projectPath
+            self.model = model
+            self.engineSessionID = engineSessionID
+            self.items = items
+            self.phase = phase
+            self.costUSD = costUSD
+            self.taskLink = taskLink
+        }
+
+        // Explicit decoding so sessions saved before `taskLink` existed keep
+        // loading instead of failing the whole array.
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            id = try container.decode(UUID.self, forKey: .id)
+            tool = try container.decode(AgentToolKind.self, forKey: .tool)
+            projectName = try container.decode(String.self, forKey: .projectName)
+            projectPath = try container.decode(String.self, forKey: .projectPath)
+            model = try container.decode(AgentModelOption.self, forKey: .model)
+            engineSessionID = try container.decodeIfPresent(String.self, forKey: .engineSessionID)
+            items = try container.decodeIfPresent([AgentChatItem].self, forKey: .items) ?? []
+            phase = try container.decodeIfPresent(AgentChatSession.Phase.self, forKey: .phase) ?? .idle
+            costUSD = try container.decodeIfPresent(Double.self, forKey: .costUSD)
+            taskLink = try container.decodeIfPresent(AgentTaskLink.self, forKey: .taskLink)
+        }
     }
 
     private var storeURL: URL {
@@ -589,7 +641,8 @@ final class AgentChatStore: ObservableObject {
                 engineSessionID: s.engineSessionID,
                 items: s.items,
                 phase: s.isBusy ? .idle : s.phase,
-                costUSD: s.costUSD
+                costUSD: s.costUSD,
+                taskLink: s.taskLink
             )
         }
         guard let data = try? JSONEncoder().encode(Array(snapshot)) else { return }
@@ -607,7 +660,8 @@ final class AgentChatStore: ObservableObject {
                 tool: p.tool,
                 projectName: p.projectName,
                 projectPath: p.projectPath,
-                model: p.model
+                model: p.model,
+                taskLink: p.taskLink
             )
             session.engineSessionID = p.engineSessionID
             session.items = p.items

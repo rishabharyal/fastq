@@ -272,6 +272,9 @@ struct AgentSession: Identifiable, Hashable {
     var activity: AgentActivity = .idle
     /// Headless chat session (AgentChatStore) instead of a PTY.
     var isChat = false
+    /// Fastplay workspace/project/task this session was started for.
+    /// `nil` for plain shells and sessions started before linking existed.
+    var taskLink: AgentTaskLink?
 
     enum SessionStatus: String, Hashable {
         case launching

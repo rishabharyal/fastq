@@ -127,6 +127,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.openBoards()
         }
         panelController.setup()
+        // Mount the launcher up front: it owns the agent-launch observer, which
+        // has to be live before the first StartAgentForTask notification lands.
+        panelController.prepare()
 
         NotificationCenter.default.addObserver(
             forName: StartAgentForTask.notification,
@@ -134,8 +137,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor in
-                self?.boardController?.close()
-                self?.panelController.show()
+                // Keep the board up when it's the surface the user started from:
+                // the run opens as a tab there once the session appears.
+                if self?.boardController?.isVisible == true {
+                    // LauncherView drives the actual launch, so it must be
+                    // mounted even though we're leaving the panel hidden.
+                    self?.panelController.prepare()
+                } else {
+                    self?.panelController.show()
+                }
             }
         }
 
@@ -177,7 +187,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         if boardController == nil {
-            boardController = BoardWindowController(auth: auth)
+            boardController = BoardWindowController(auth: auth, sessions: sessions)
         }
         boardController?.show()
     }

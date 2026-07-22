@@ -42,6 +42,9 @@ struct LauncherView: View {
     @State private var userMentionResults: [FastplayUser] = []
     @State private var userSearchGeneration = 0
     @State private var taskMentionCache: [String: AgentLinkedTask] = [:]
+    /// Workspace/project/task IDs from the board request that prefilled the
+    /// prompt — consumed by the next launch, then cleared.
+    @State private var pendingTaskLink: AgentTaskLink?
     @State private var taskSearchGeneration = 0
     @State private var isSearchingTasks = false
     @State private var lastCreatedTask: FastplayTask?
@@ -91,8 +94,10 @@ struct LauncherView: View {
     /// room to render.
     private var showsContentArea: Bool {
         if mode == .chat || mode == .board { return true }
-        if keepChatMounted, !chat.messages.isEmpty { return true }
         if isSessionPreviewOpen { return true }
+        // A mounted-but-hidden chat thread used to keep this true in agent mode,
+        // reserving 480pt for an empty session list — which left the prompt bar
+        // stranded in the middle of the panel after the last agent was closed.
         return !sessions.sessions.isEmpty || settings.needsSetup || mentionVisible
     }
 
@@ -256,6 +261,9 @@ struct LauncherView: View {
                     Divider().opacity(0.25)
                     footer
                 }
+                // Top-anchored: if the reserved height ever outruns the actual
+                // content, the chrome must stay put rather than float mid-panel.
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
         }
         .frame(width: isSessionPreviewOpen ? 1180 : 720)
@@ -1766,12 +1774,20 @@ struct LauncherView: View {
                 ),
                 tool: tool,
                 model: selectedModel,
-                attachments: attachments
+                attachments: attachments,
+                taskLink: AgentTaskLink(
+                    workspaceID: pendingTaskLink?.workspaceID ?? board.selectedWorkspaceID,
+                    projectID: pendingTaskLink?.projectID ?? project.id,
+                    taskID: pendingTaskLink?.taskID ?? linkedTasks.first?.id,
+                    taskTitle: pendingTaskLink?.taskTitle ?? linkedTasks.first?.title,
+                    taskShortCode: pendingTaskLink?.taskShortCode
+                ).normalized
             )
             selectedSessionID = session.id
             prompt = ""
             attachments = []
             lastCreatedTask = nil
+            pendingTaskLink = nil
             openSessionPreview()
         } catch {
             errorMessage = error.localizedDescription
@@ -1839,6 +1855,12 @@ struct LauncherView: View {
 
     private func startAgent(for task: FastplayTask, columnName: String? = nil) {
         rememberTask(task, columnName: columnName)
+        pendingTaskLink = AgentTaskLink(
+            workspaceID: board.selectedWorkspaceID,
+            projectID: task.projectID ?? task.project?.id ?? board.selectedProjectID,
+            taskID: task.id,
+            taskTitle: task.title
+        ).normalized
         mode = .agent
         settings.launcherMode = .agent
         prompt = "#task:\(task.id) "
@@ -1863,6 +1885,9 @@ struct LauncherView: View {
         }
 
         taskMentionCache[linked.id] = linked
+        // Keep the board's IDs so the launched session stays attached to the
+        // task it came from; board selection fills any gaps at launch time.
+        pendingTaskLink = StartAgentForTask.taskLink(from: note)
         mode = .agent
         settings.launcherMode = .agent
         prompt = "#task:\(linked.id) "

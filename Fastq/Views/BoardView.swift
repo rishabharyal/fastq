@@ -2,14 +2,33 @@ import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
 
+/// What the main area of the board window is showing: the kanban, or one of the
+/// open agent runs.
+enum BoardTab: Hashable {
+    case board
+    case run(UUID)
+}
+
 struct BoardView: View {
     @ObservedObject var auth: FastplayAuthStore
+    @ObservedObject var sessions: SessionStore
     @ObservedObject private var folders = ProjectFolderStore.shared
     @StateObject private var store = BoardStore()
     @State private var detailTask: FastplayTask?
     @State private var showComposer = false
     @State private var composerColumnID: String?
     @State private var draftTaskColumnID: String?
+
+    /// Sidebar collapse state, toggled with ⌘S and remembered across launches.
+    @AppStorage("fastq.board.sidebarVisible") private var sidebarVisible = true
+    @AppStorage("fastq.board.sidebarWidth") private var storedSidebarWidth: Double = 240
+
+    private var sidebarWidth: CGFloat { CGFloat(storedSidebarWidth) }
+    /// Agent runs the user has opened as tabs, in tab order.
+    @State private var openRunIDs: [UUID] = []
+    @State private var selectedTab: BoardTab = .board
+    /// Session IDs already seen, so newly launched agents auto-open exactly once.
+    @State private var knownSessionIDs: Set<UUID> = []
 
     var body: some View {
         Group {
@@ -83,9 +102,53 @@ struct BoardView: View {
     }
 
     private var signedIn: some View {
-        VStack(spacing: 0) {
-            toolbar
-            Divider()
+        HStack(spacing: 0) {
+            // Always mounted and animated to zero width: a conditional branch
+            // pops instead of sliding, and remounting resets scroll position.
+            sidebar
+                .frame(width: sidebarVisible ? sidebarWidth : 0)
+                .opacity(sidebarVisible ? 1 : 0)
+                .clipped()
+                .allowsHitTesting(sidebarVisible)
+            if sidebarVisible {
+                ResizeHandle(
+                    width: $storedSidebarWidth,
+                    range: 190...420,
+                    accessibilityName: "sidebar"
+                )
+            }
+            VStack(spacing: 0) {
+                boardHeader
+                Divider()
+                if !openRunIDs.isEmpty {
+                    tabStrip
+                    Divider()
+                }
+                mainContent
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .background(sidebarShortcut)
+        .onReceive(sessions.$sessions) { list in
+            adoptNewSessions(list)
+        }
+    }
+
+    /// ⌘S toggles the sidebar. Hidden button so the shortcut is scoped to this window.
+    private var sidebarShortcut: some View {
+        Button("Toggle Sidebar") {
+            withAnimation(.easeInOut(duration: 0.18)) { sidebarVisible.toggle() }
+        }
+        .keyboardShortcut("s", modifiers: .command)
+        .opacity(0)
+        .frame(width: 0, height: 0)
+        .accessibilityHidden(true)
+    }
+
+    @ViewBuilder
+    private var mainContent: some View {
+        switch selectedTab {
+        case .board:
             if store.isLoading && store.board == nil {
                 ProgressView("Loading…")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -93,48 +156,300 @@ struct BoardView: View {
                 ContentUnavailableView(
                     "No project",
                     systemImage: "folder",
-                    description: Text("Create or select a project in this workspace.")
+                    description: Text("Create or select a project in the sidebar.")
                 )
             } else {
                 kanban
             }
+        case .run(let id):
+            AgentRunView(
+                sessionID: id,
+                sessions: sessions,
+                boardStore: store,
+                projectPath: runProjectPath(for: id),
+                onClose: { closeRun(id) },
+                onOpenTaskDetail: { task in detailTask = task }
+            )
         }
     }
 
-    private var toolbar: some View {
-        HStack(spacing: 12) {
-            Picker("Workspace", selection: Binding(
-                get: { store.selectedWorkspaceID ?? "" },
-                set: { id in Task { await store.selectWorkspace(id) } }
-            )) {
-                ForEach(store.workspaces) { ws in
-                    Text(ws.name).tag(ws.id)
+    /// The local folder the run's project is linked to, for the inspector panes.
+    private func runProjectPath(for id: UUID) -> String? {
+        guard let session = sessions.session(id: id) else { return nil }
+        if let projectID = session.taskLink?.projectID, let path = folders.path(for: projectID) {
+            return path
+        }
+        return session.projectPath.isEmpty ? nil : session.projectPath
+    }
+
+    // MARK: - Tabs
+
+    private var tabStrip: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                tabChip(
+                    title: "Board",
+                    systemImage: "rectangle.split.3x1",
+                    isSelected: selectedTab == .board,
+                    onSelect: { selectedTab = .board },
+                    onClose: nil
+                )
+                ForEach(openRunIDs, id: \.self) { id in
+                    tabChip(
+                        title: runTitle(for: id),
+                        systemImage: "sparkles",
+                        isSelected: selectedTab == .run(id),
+                        onSelect: { selectedTab = .run(id) },
+                        onClose: { closeRun(id) }
+                    )
                 }
             }
-            .frame(maxWidth: 220)
-            .disabled(store.workspaces.isEmpty)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+        }
+        .background(FQTheme.background)
+    }
 
-            Picker("Project", selection: Binding(
-                get: { store.selectedProjectID ?? "" },
-                set: { id in Task { await store.selectProject(id) } }
-            )) {
-                ForEach(store.projects) { project in
-                    Text(project.name).tag(project.id)
+    private func tabChip(
+        title: String,
+        systemImage: String,
+        isSelected: Bool,
+        onSelect: @escaping () -> Void,
+        onClose: (() -> Void)?
+    ) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: systemImage)
+                .font(.system(size: 10, weight: .medium))
+            Text(title)
+                .font(.system(size: 11.5, weight: isSelected ? .semibold : .regular))
+                .lineLimit(1)
+            if let onClose {
+                Button(action: onClose) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 8, weight: .bold))
+                        .frame(width: 13, height: 13)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Close \(title)")
+            }
+        }
+        .foregroundStyle(isSelected ? FQTheme.textPrimary : FQTheme.textSecondary)
+        .padding(.horizontal, 9)
+        .padding(.vertical, 5)
+        .background(
+            RoundedRectangle(cornerRadius: FQTheme.radiusSmall, style: .continuous)
+                .fill(isSelected ? FQTheme.surface : Color.clear)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: FQTheme.radiusSmall, style: .continuous)
+                .strokeBorder(isSelected ? FQTheme.border : Color.clear, lineWidth: 1)
+        )
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onSelect)
+        .accessibilityLabel("\(title) tab\(isSelected ? ", selected" : "")")
+    }
+
+    private func runTitle(for id: UUID) -> String {
+        guard let session = sessions.session(id: id) else { return "Agent" }
+        if let title = session.taskLink?.taskTitle, !title.isEmpty { return title }
+        let preview = session.promptPreview.trimmingCharacters(in: .whitespacesAndNewlines)
+        return preview.isEmpty ? session.tool.displayName : String(preview.prefix(28))
+    }
+
+    private func openRun(_ id: UUID) {
+        if !openRunIDs.contains(id) { openRunIDs.append(id) }
+        selectedTab = .run(id)
+    }
+
+    private func closeRun(_ id: UUID) {
+        openRunIDs.removeAll { $0 == id }
+        if selectedTab == .run(id) {
+            selectedTab = openRunIDs.last.map { BoardTab.run($0) } ?? .board
+        }
+    }
+
+    /// Auto-opens a tab for an agent launched while the board is open, so starting
+    /// a run from a task lands the user straight in it.
+    private func adoptNewSessions(_ list: [AgentSession]) {
+        let current = Set(list.map(\.id))
+        defer { knownSessionIDs = current }
+        guard !knownSessionIDs.isEmpty else { return }
+        let fresh = list.filter { !knownSessionIDs.contains($0.id) }
+        for session in fresh where belongsToSelectedProject(session) {
+            openRun(session.id)
+        }
+        // Drop tabs whose session has gone away entirely.
+        openRunIDs.removeAll { !current.contains($0) }
+        if case .run(let id) = selectedTab, !current.contains(id) {
+            selectedTab = openRunIDs.last.map { BoardTab.run($0) } ?? .board
+        }
+    }
+
+    private func belongsToSelectedProject(_ session: AgentSession) -> Bool {
+        if let projectID = store.selectedProjectID {
+            if session.taskLink?.projectID == projectID { return true }
+            if let path = folders.path(for: projectID), path == session.projectPath { return true }
+        }
+        return false
+    }
+
+    private func agentSessions(for project: FastplayProject) -> [AgentSession] {
+        sessions.sessions(forProjectID: project.id, projectPath: folders.path(for: project.id))
+    }
+
+    // MARK: - Sidebar
+
+    private var sidebar: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            workspaceSwitcher
+                .padding(.horizontal, 10)
+                .padding(.top, 10)
+                .padding(.bottom, 8)
+
+            Divider()
+
+            HStack(spacing: 6) {
+                Text("Projects")
+                    .font(.system(size: 10, weight: .semibold))
+                    .textCase(.uppercase)
+                    .foregroundStyle(FQTheme.textSecondary)
+                Spacer()
+                FQIconButton(systemImage: "plus", size: 20, iconSize: 10, help: "New project…") {
+                    store.newProjectName = ""
+                    store.showNewProjectSheet = true
+                }
+                .disabled(store.selectedWorkspace == nil)
+            }
+            .padding(.horizontal, 14)
+            .padding(.top, 12)
+            .padding(.bottom, 4)
+
+            if store.projects.isEmpty {
+                Text("No projects in this workspace yet.")
+                    .font(FQTheme.fontSmall)
+                    .foregroundStyle(FQTheme.textSecondary)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                Spacer(minLength: 0)
+            } else {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 2) {
+                        ForEach(store.projects) { project in
+                            ProjectSidebarRow(
+                                project: project,
+                                isSelected: project.id == store.selectedProjectID,
+                                folderPath: folders.path(for: project.id),
+                                onSelect: { Task { await store.selectProject(project.id) } },
+                                onPickFolder: { pickFolder(for: project.id) },
+                                onRevealFolder: { revealFolder(for: project.id) },
+                                onClearFolder: { folders.clear(for: project.id) }
+                            )
+                            ForEach(agentSessions(for: project)) { session in
+                                AgentSidebarRow(
+                                    session: session,
+                                    isSelected: selectedTab == .run(session.id),
+                                    onSelect: { openRun(session.id) }
+                                )
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.bottom, 10)
                 }
             }
-            .frame(maxWidth: 220)
-            .disabled(store.projects.isEmpty)
+        }
+        .frame(width: sidebarWidth, alignment: .leading)
+        .frame(maxHeight: .infinity, alignment: .top)
+        .background(FQTheme.background)
+    }
 
-            Button {
-                store.newProjectName = ""
-                store.showNewProjectSheet = true
-            } label: {
-                Label("New Project", systemImage: "folder.badge.plus")
+    private var workspaceSwitcher: some View {
+        Menu {
+            ForEach(store.workspaces) { ws in
+                Button {
+                    Task { await store.selectWorkspace(ws.id) }
+                } label: {
+                    if ws.id == store.selectedWorkspaceID {
+                        Label(ws.name, systemImage: "checkmark")
+                    } else {
+                        Text(ws.name)
+                    }
+                }
             }
-            .disabled(store.selectedWorkspace == nil)
+            Divider()
+            Button("Refresh workspaces") {
+                Task { await store.refreshWorkspaces() }
+            }
+        } label: {
+            HStack(spacing: 8) {
+                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    .fill(FQTheme.controlPrimary)
+                    .frame(width: 20, height: 20)
+                    .overlay(
+                        Text(workspaceInitial)
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(FQTheme.onControlPrimary)
+                    )
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(store.selectedWorkspace?.name ?? "No workspace")
+                        .font(.system(size: 12.5, weight: .semibold))
+                        .foregroundStyle(FQTheme.textPrimary)
+                        .lineLimit(1)
+                    Text("Workspace")
+                        .font(.system(size: 10))
+                        .foregroundStyle(FQTheme.textSecondary)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(FQTheme.textSecondary)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            // An explicit width keeps `.fixedSize()` happy: a borderlessButton
+            // menu whose label is flexible collapses to just the indicator.
+            .frame(width: sidebarWidth - 20, alignment: .leading)
+            .background(FQTheme.surface, in: RoundedRectangle(cornerRadius: FQTheme.radiusSmall, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: FQTheme.radiusSmall, style: .continuous)
+                    .strokeBorder(FQTheme.border, lineWidth: 1)
+            )
+            .contentShape(Rectangle())
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .disabled(store.workspaces.isEmpty)
+        .accessibilityLabel("Workspace: \(store.selectedWorkspace?.name ?? "none")")
+    }
 
-            if let project = store.selectedProject {
-                folderLinkControl(for: project)
+    private var workspaceInitial: String {
+        let name = store.selectedWorkspace?.name ?? "?"
+        return String(name.first.map(String.init) ?? "?").uppercased()
+    }
+
+    // MARK: - Board header
+
+    private var boardHeader: some View {
+        HStack(spacing: 10) {
+            FQIconButton(
+                systemImage: "sidebar.leading",
+                size: 24,
+                iconSize: 12,
+                help: sidebarVisible ? "Hide sidebar (⌘S)" : "Show sidebar (⌘S)"
+            ) {
+                withAnimation(.easeInOut(duration: 0.18)) { sidebarVisible.toggle() }
+            }
+
+            Text(store.selectedProject?.name ?? "Board")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(FQTheme.textPrimary)
+                .lineLimit(1)
+
+            if let project = store.selectedProject, let path = folders.path(for: project.id) {
+                FQStatusPill(text: URL(fileURLWithPath: path).lastPathComponent, hue: .gray)
+                    .help(path)
             }
 
             Spacer()
@@ -164,30 +479,9 @@ struct BoardView: View {
         .padding(.vertical, 10)
     }
 
-    private func folderLinkControl(for project: FastplayProject) -> some View {
-        let linked = folders.path(for: project.id)
-        let label = linked.map { URL(fileURLWithPath: $0).path } ?? "No folder linked"
-        return HStack(spacing: 8) {
-            Image(systemName: linked == nil ? "folder.badge.questionmark" : "folder.fill")
-                .foregroundStyle(linked == nil ? Color.orange : Color.secondary)
-            Text(linked.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "No folder linked")
-                .font(.system(size: 12, weight: .medium))
-                .lineLimit(1)
-                .help(label)
-            if linked != nil {
-                Button("Change…") { pickFolder(for: project.id) }
-                    .controlSize(.small)
-                Button("Clear", role: .destructive) { folders.clear(for: project.id) }
-                    .controlSize(.small)
-            } else {
-                Button("Link folder…") { pickFolder(for: project.id) }
-                    .controlSize(.small)
-                    .buttonStyle(.borderedProminent)
-            }
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 4)
-        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+    private func revealFolder(for projectID: String) {
+        guard let path = folders.path(for: projectID) else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
     }
 
     private func pickFolder(for projectID: String) {
@@ -298,6 +592,134 @@ struct BoardView: View {
         }
         .padding(20)
         .frame(width: 360)
+    }
+}
+
+/// One project in the sidebar: name, linked-folder subtitle, and a gear menu
+/// for per-project configuration.
+private struct ProjectSidebarRow: View {
+    let project: FastplayProject
+    let isSelected: Bool
+    let folderPath: String?
+    var onSelect: () -> Void
+    var onPickFolder: () -> Void
+    var onRevealFolder: () -> Void
+    var onClearFolder: () -> Void
+
+    @State private var isHovering = false
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: folderPath == nil ? "folder.badge.questionmark" : "folder.fill")
+                .font(.system(size: 11))
+                .foregroundStyle(folderPath == nil ? FQTheme.warning : FQTheme.textSecondary)
+                .frame(width: 14)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(project.name)
+                    .font(.system(size: 12.5, weight: isSelected ? .semibold : .regular))
+                    .foregroundStyle(FQTheme.textPrimary)
+                    .lineLimit(1)
+                Text(folderPath.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "No folder linked")
+                    .font(.system(size: 10))
+                    .foregroundStyle(FQTheme.textSecondary)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 0)
+
+            if isHovering || isSelected {
+                settingsMenu
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(
+            RoundedRectangle(cornerRadius: FQTheme.radiusSmall, style: .continuous)
+                .fill(isSelected ? FQTheme.surfaceSecondary : (isHovering ? FQTheme.surfaceSecondary.opacity(0.6) : .clear))
+        )
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onSelect)
+        .onHover { isHovering = $0 }
+        .help(folderPath ?? "No folder linked")
+        .accessibilityLabel("Project \(project.name)\(isSelected ? ", selected" : "")")
+    }
+
+    private var settingsMenu: some View {
+        Menu {
+            if folderPath == nil {
+                Button("Link folder…", action: onPickFolder)
+            } else {
+                Button("Change folder…", action: onPickFolder)
+                Button("Reveal in Finder", action: onRevealFolder)
+                Divider()
+                Button("Clear folder", role: .destructive, action: onClearFolder)
+            }
+        } label: {
+            Image(systemName: "gearshape")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(FQTheme.textSecondary)
+                .frame(width: 20, height: 18)
+                .contentShape(Rectangle())
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Project settings")
+        .accessibilityLabel("Settings for \(project.name)")
+    }
+}
+
+/// A running (or finished) agent listed under its project in the sidebar.
+private struct AgentSidebarRow: View {
+    let session: AgentSession
+    let isSelected: Bool
+    var onSelect: () -> Void
+
+    @State private var isHovering = false
+
+    var body: some View {
+        HStack(spacing: 7) {
+            Circle()
+                .fill(statusColor)
+                .frame(width: 6, height: 6)
+            Text(title)
+                .font(.system(size: 11.5, weight: isSelected ? .semibold : .regular))
+                .foregroundStyle(isSelected ? FQTheme.textPrimary : FQTheme.textSecondary)
+                .lineLimit(1)
+            Spacer(minLength: 0)
+            if session.status == .running {
+                Image(systemName: "bolt.fill")
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(FQTheme.accent)
+            }
+        }
+        .padding(.leading, 26)
+        .padding(.trailing, 8)
+        .padding(.vertical, 4)
+        .background(
+            RoundedRectangle(cornerRadius: FQTheme.radiusSmall, style: .continuous)
+                .fill(isSelected ? FQTheme.surfaceSecondary : (isHovering ? FQTheme.surfaceSecondary.opacity(0.5) : .clear))
+        )
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onSelect)
+        .onHover { isHovering = $0 }
+        .help(title)
+        .accessibilityLabel("Agent run \(title), \(session.status == .running ? "running" : "stopped")")
+    }
+
+    private var title: String {
+        if let taskTitle = session.taskLink?.taskTitle, !taskTitle.isEmpty { return taskTitle }
+        let preview = session.promptPreview.trimmingCharacters(in: .whitespacesAndNewlines)
+        return preview.isEmpty ? session.tool.displayName : preview
+    }
+
+    private var statusColor: Color {
+        switch session.status {
+        case .running: return FQTheme.success
+        case .launching: return FQTheme.warning
+        case .exited: return FQTheme.textTertiary
+        }
     }
 }
 

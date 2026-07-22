@@ -85,16 +85,22 @@ enum CursorHeadlessEngine {
 
             switch subtype {
             case "started":
+                let name = prettyToolName(kindKey, args: args)
                 return [.toolStarted(
                     id: callID,
-                    name: prettyToolName(kindKey, args: args),
+                    name: name,
                     summary: summarize(args),
-                    isSubagent: false
+                    isSubagent: false,
+                    detail: detail(name: name, args: args)
                 )]
             case "completed":
                 let result = payload["result"] as? [String: Any]
                 let failed = result?["error"] != nil
-                return [.toolFinished(id: callID, ok: !failed)]
+                return [.toolFinished(
+                    id: callID,
+                    ok: !failed,
+                    resultText: resultText(from: result)
+                )]
             default:
                 return []
             }
@@ -137,6 +143,66 @@ enum CursorHeadlessEngine {
             return words.joined(separator: " ").lowercased()
         }
         return key.lowercased()
+    }
+
+    /// Cursor uses camelCase arg keys and varies them per tool, so every
+    /// field is looked up through a list of plausible spellings.
+    private static func detail(name: String, args: [String: Any]) -> ToolCallDetail {
+        func string(_ keys: [String]) -> String? {
+            for key in keys {
+                if let value = args[key] as? String, !value.isEmpty { return value }
+            }
+            return nil
+        }
+
+        var detail = ToolCallDetail(kind: ToolDetailKind.infer(toolName: name))
+        detail.filePath = string(["path", "file_path", "filePath", "relativeWorkspacePath", "target_file"])
+        detail.oldString = string(["oldString", "old_string", "oldText", "search"])
+        detail.newString = string(["newString", "new_string", "newText", "replace"])
+        detail.content = string(["contents", "content", "fileText", "text", "code_edit"])
+        detail.command = string(["command", "cmd"])
+        detail.pattern = string(["globPattern", "pattern", "query", "regex"])
+        if detail.pattern != nil, detail.filePath == nil {
+            detail.searchPath = string(["searchPath", "directory", "targetDirectory"])
+        }
+        if let rawEdits = args["edits"] as? [[String: Any]] {
+            let patches = rawEdits.compactMap { edit -> ToolEditPatch? in
+                let old = edit["oldString"] as? String ?? edit["old_string"] as? String
+                let new = edit["newString"] as? String ?? edit["new_string"] as? String
+                guard old != nil || new != nil else { return nil }
+                return ToolEditPatch(oldString: old ?? "", newString: new ?? "")
+            }
+            if !patches.isEmpty { detail.edits = patches }
+        }
+        if detail.isEmpty || detail.kind == .other {
+            let interesting = args.filter { !["toolCallId", "timeout", "workingDirectory"].contains($0.key) }
+            detail.rawInput = ClaudeHeadlessEngine.prettyJSON(interesting)
+        }
+        return detail.capped()
+    }
+
+    /// `result` is `{"success": {...}}` or `{"error": {...}}` — pull the
+    /// most text-like payload out of whichever arrived.
+    private static func resultText(from result: [String: Any]?) -> String? {
+        guard let result else { return nil }
+        let payload = result["error"] ?? result["success"] ?? result
+        var text: String?
+        if let string = payload as? String {
+            text = string
+        } else if let dict = payload as? [String: Any] {
+            let preferred = ["output", "content", "contents", "text", "message", "stdout", "result"]
+            for key in preferred {
+                if let value = dict[key] as? String, !value.isEmpty {
+                    text = value
+                    break
+                }
+            }
+            if text == nil { text = ClaudeHeadlessEngine.prettyJSON(dict) }
+        } else {
+            text = ClaudeHeadlessEngine.prettyJSON(payload)
+        }
+        guard let text, !text.isEmpty else { return nil }
+        return ToolDetailLimits.cap(text, ToolDetailLimits.result)
     }
 
     private static func summarize(_ args: [String: Any]) -> String {

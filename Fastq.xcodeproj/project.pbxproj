@@ -7,6 +7,14 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A100000000000000000000D1 /* AgentComposerBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000000000000D1 /* AgentComposerBar.swift */; };
+		A100000000000000000000D2 /* ToolCallDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000000000000D2 /* ToolCallDetailView.swift */; };
+		A100000000000000000000D0 /* ResizeHandle.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000000000000D0 /* ResizeHandle.swift */; };
+		A100000000000000000000C0 /* GitService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000000000000C0 /* GitService.swift */; };
+		A100000000000000000000C1 /* ProjectFilesPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000000000000C1 /* ProjectFilesPane.swift */; };
+		A100000000000000000000C2 /* GitDiffPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000000000000C2 /* GitDiffPane.swift */; };
+		A100000000000000000000C3 /* InlineTerminalPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000000000000C3 /* InlineTerminalPane.swift */; };
+		A100000000000000000000C4 /* AgentRunView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000000000000C4 /* AgentRunView.swift */; };
 		A10000000000000000000060 /* ChatRichContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000060 /* ChatRichContent.swift */; };
 		A10000000000000000000061 /* katex in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000061 /* katex */; };
 		A100000000000000000000B0 /* ChatRenderer in Resources */ = {isa = PBXBuildFile; fileRef = A200000000000000000000B0 /* ChatRenderer */; };
@@ -86,6 +94,14 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		A200000000000000000000D1 /* AgentComposerBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentComposerBar.swift; sourceTree = "<group>"; };
+		A200000000000000000000D2 /* ToolCallDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolCallDetailView.swift; sourceTree = "<group>"; };
+		A200000000000000000000D0 /* ResizeHandle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResizeHandle.swift; sourceTree = "<group>"; };
+		A200000000000000000000C0 /* GitService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitService.swift; sourceTree = "<group>"; };
+		A200000000000000000000C1 /* ProjectFilesPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectFilesPane.swift; sourceTree = "<group>"; };
+		A200000000000000000000C2 /* GitDiffPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitDiffPane.swift; sourceTree = "<group>"; };
+		A200000000000000000000C3 /* InlineTerminalPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InlineTerminalPane.swift; sourceTree = "<group>"; };
+		A200000000000000000000C4 /* AgentRunView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRunView.swift; sourceTree = "<group>"; };
 		A20000000000000000000060 /* ChatRichContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatRichContent.swift; sourceTree = "<group>"; };
 		A20000000000000000000061 /* katex */ = {isa = PBXFileReference; lastKnownFileType = folder; name = katex; path = Resources/katex; sourceTree = "<group>"; };
 		A200000000000000000000B0 /* ChatRenderer */ = {isa = PBXFileReference; lastKnownFileType = folder; name = ChatRenderer; path = Resources/ChatRenderer; sourceTree = "<group>"; };
@@ -253,6 +269,19 @@
 			path = Services;
 			sourceTree = "<group>";
 		};
+		A400000000000000000000C0 /* Board */ = {
+			isa = PBXGroup;
+			children = (
+				A200000000000000000000D0 /* ResizeHandle.swift */,
+				A200000000000000000000C0 /* GitService.swift */,
+				A200000000000000000000C1 /* ProjectFilesPane.swift */,
+				A200000000000000000000C2 /* GitDiffPane.swift */,
+				A200000000000000000000C3 /* InlineTerminalPane.swift */,
+				A200000000000000000000C4 /* AgentRunView.swift */,
+			);
+			path = Board;
+			sourceTree = "<group>";
+		};
 		A40000000000000000000090 /* DesignSystem */ = {
 			isa = PBXGroup;
 			children = (
@@ -283,6 +312,8 @@
 		A40000000000000000000092 /* AgentChat */ = {
 			isa = PBXGroup;
 			children = (
+				A200000000000000000000D1 /* AgentComposerBar.swift */,
+				A200000000000000000000D2 /* ToolCallDetailView.swift */,
 				A2000000000000000000009D /* MarkdownText.swift */,
 				A2000000000000000000009E /* AgentChatView.swift */,
 				A2000000000000000000009F /* AgentChatComponents.swift */,
@@ -332,6 +363,7 @@
 				A20000000000000000000076 /* BoardModeView.swift */,
 				A20000000000000000000078 /* LauncherMetrics.swift */,
 				A40000000000000000000090 /* DesignSystem */,
+				A400000000000000000000C0 /* Board */,
 				A40000000000000000000092 /* AgentChat */,
 				A20000000000000000000080 /* BoardComponents.swift */,
 				A20000000000000000000081 /* TaskComposerView.swift */,
@@ -533,6 +565,14 @@
 				A10000000000000000000082 /* TaskDetailView.swift in Sources */,
 				A10000000000000000000083 /* TaskDetailStore.swift in Sources */,
 				A10000000000000000000074 /* BoardView.swift in Sources */,
+				A100000000000000000000D1 /* AgentComposerBar.swift in Sources */,
+				A100000000000000000000D2 /* ToolCallDetailView.swift in Sources */,
+				A100000000000000000000D0 /* ResizeHandle.swift in Sources */,
+				A100000000000000000000C0 /* GitService.swift in Sources */,
+				A100000000000000000000C1 /* ProjectFilesPane.swift in Sources */,
+				A100000000000000000000C2 /* GitDiffPane.swift in Sources */,
+				A100000000000000000000C3 /* InlineTerminalPane.swift in Sources */,
+				A100000000000000000000C4 /* AgentRunView.swift in Sources */,
 				A10000000000000000000075 /* BoardWindowController.swift in Sources */,
 				A10000000000000000000076 /* BoardModeView.swift in Sources */,
 				A10000000000000000000031 /* ChatModeView.swift in Sources */,

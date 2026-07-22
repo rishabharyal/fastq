@@ -151,6 +151,13 @@ final class LauncherPanelController: NSObject, ObservableObject {
         }
     }
 
+    /// Builds the panel (and therefore mounts `LauncherView`) without showing it.
+    /// Agent launches are driven by observers inside that view, so it has to
+    /// exist even when the user starts a run from the board window.
+    func prepare() {
+        ensurePanel()
+    }
+
     private func ensurePanel() {
         if panel != nil { return }
 

@@ -37,32 +37,77 @@ struct ToolCallGroup: View {
     }
 }
 
+/// One tool call: the compact one-liner, disclosable into the full
+/// inspector (diff / command output / file contents).
 struct ToolCallRow: View {
     let call: ToolCallRecord
 
+    @State private var expanded = false
+    @State private var isHovering = false
+
     var body: some View {
-        HStack(spacing: 7) {
-            statusIcon
-            Text(call.name)
-                .font(FQTheme.fontMono.weight(.medium))
-                .foregroundStyle(FQTheme.textSecondary)
-            if call.isSubagent {
-                FQBadge(text: "subagent", tone: .neutral)
+        VStack(alignment: .leading, spacing: 4) {
+            summaryRow
+            if expanded, call.hasDetail {
+                ToolCallDetailView(call: call)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
             }
-            if !call.summary.isEmpty {
-                Text(call.summary)
-                    .font(FQTheme.fontCaption)
-                    .foregroundStyle(FQTheme.textTertiary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            }
-            if let duration = call.durationLabel {
-                Text(duration)
-                    .font(FQTheme.fontCaption)
-                    .foregroundStyle(FQTheme.textTertiary)
-            }
-            Spacer(minLength: 0)
         }
+    }
+
+    private var summaryRow: some View {
+        Button {
+            guard call.hasDetail else { return }
+            withAnimation(.easeOut(duration: 0.15)) { expanded.toggle() }
+        } label: {
+            HStack(spacing: 7) {
+                statusIcon
+                Text(call.name)
+                    .font(FQTheme.fontMono.weight(.medium))
+                    .foregroundStyle(FQTheme.textSecondary)
+                if call.isSubagent {
+                    FQBadge(text: "subagent", tone: .neutral)
+                }
+                if !call.summary.isEmpty {
+                    Text(call.summary)
+                        .font(FQTheme.fontCaption)
+                        .foregroundStyle(FQTheme.textTertiary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                if let duration = call.durationLabel {
+                    Text(duration)
+                        .font(FQTheme.fontCaption)
+                        .foregroundStyle(FQTheme.textTertiary)
+                }
+                if call.hasDetail {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 8, weight: .semibold))
+                        .foregroundStyle(isHovering || expanded ? FQTheme.textSecondary : FQTheme.textTertiary)
+                        .rotationEffect(.degrees(expanded ? 90 : 0))
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 4)
+            .padding(.vertical, 2)
+            .background(
+                isHovering && call.hasDetail ? FQTheme.surfaceSecondary : .clear,
+                in: RoundedRectangle(cornerRadius: FQTheme.radiusSmall, style: .continuous)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+        .disabled(!call.hasDetail)
+        .help(call.hasDetail ? (expanded ? "Hide details" : "Show details") : "")
+        .accessibilityLabel(accessibilityText)
+    }
+
+    private var accessibilityText: String {
+        var parts = ["\(call.name) \(call.summary)"]
+        if call.ok == false { parts.append("failed") }
+        if call.hasDetail { parts.append(expanded ? "expanded, collapse details" : "collapsed, expand details") }
+        return parts.joined(separator: ", ")
     }
 
     @ViewBuilder

@@ -42,6 +42,41 @@ final class SessionStore: ObservableObject {
         sessions.first { $0.id == id }
     }
 
+    /// Sessions started for a Fastplay project, newest first. Matches the
+    /// durable link when present; pre-link sessions (and ⌘T shells) are
+    /// matched by the folder linked to that project.
+    func sessions(forProjectID projectID: String, projectPath: String? = nil) -> [AgentSession] {
+        let path = projectPath.map { Self.normalizedPath($0) }
+        return sessions.filter { session in
+            if let linked = session.taskLink?.projectID { return linked == projectID }
+            guard let path else { return false }
+            return Self.normalizedPath(session.projectPath) == path
+        }
+    }
+
+    /// Sessions whose working directory is this folder, newest first.
+    func sessions(forProjectPath projectPath: String) -> [AgentSession] {
+        let path = Self.normalizedPath(projectPath)
+        return sessions.filter { Self.normalizedPath($0.projectPath) == path }
+    }
+
+    /// Sessions started for a Fastplay workspace, newest first.
+    func sessions(forWorkspaceID workspaceID: String) -> [AgentSession] {
+        sessions.filter { $0.taskLink?.workspaceID == workspaceID }
+    }
+
+    /// Sessions started for a single task, newest first.
+    func sessions(forTaskID taskID: String) -> [AgentSession] {
+        sessions.filter { $0.taskLink?.taskID == taskID }
+    }
+
+    /// Trailing slashes and `~` shouldn't split a project's sessions.
+    private static func normalizedPath(_ path: String) -> String {
+        var expanded = (path as NSString).expandingTildeInPath
+        while expanded.count > 1, expanded.hasSuffix("/") { expanded.removeLast() }
+        return expanded
+    }
+
     func terminal(id: UUID) -> TerminalSession? {
         terminals.sessions.first { $0.id == id }
     }
@@ -79,6 +114,11 @@ final class SessionStore: ObservableObject {
         for index in sessions.indices {
             if sessions[index].isChat {
                 guard let chat = AgentChatStore.shared.session(id: sessions[index].id) else { continue }
+                // Reconciliation only refreshes run state — keep the task
+                // link, and adopt the chat's if this row never had one.
+                if sessions[index].taskLink == nil, let link = chat.taskLink {
+                    sessions[index].taskLink = link
+                }
                 switch chat.phase {
                 case .running:
                     sessions[index].status = .running

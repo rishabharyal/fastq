@@ -10,13 +10,20 @@ struct AgentChatView: View {
     @State private var followUp = ""
     @State private var followUpAttachments: [PromptAttachment] = []
 
+    /// Shared by the attach button, drag-and-drop and paste — all three land here.
+    private func addAttachments(_ urls: [URL]) {
+        for url in urls where !followUpAttachments.contains(where: { $0.path == url.path }) {
+            followUpAttachments.append(PromptAttachment(url: url))
+        }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             header
             Divider().opacity(0.4)
             transcript
             Divider().opacity(0.4)
-            AgentChatComposer(
+            AgentComposerBar(
                 text: $followUp,
                 attachments: $followUpAttachments,
                 placeholder: composerPlaceholder,
@@ -30,12 +37,12 @@ struct AgentChatView: View {
                 showsModelPicker: false,
                 onAttach: {
                     FolderPicker.chooseFiles { urls in
-                        for url in urls where !followUpAttachments.contains(where: { $0.path == url.path }) {
-                            followUpAttachments.append(PromptAttachment(url: url))
-                        }
+                        addAttachments(urls)
                     }
                 },
                 onStop: { store.stop(sessionID: session.id) },
+                contextLabel: URL(fileURLWithPath: session.projectPath).lastPathComponent,
+                onAttachURLs: { urls in addAttachments(urls) },
                 onSubmit: sendFollowUp
             )
             .padding(FQTheme.space3)

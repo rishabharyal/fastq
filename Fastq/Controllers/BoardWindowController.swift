@@ -5,10 +5,18 @@ import SwiftUI
 final class BoardWindowController: NSObject, NSWindowDelegate {
     private var window: NSWindow?
     private let auth: FastplayAuthStore
+    private let sessions: SessionStore
 
-    init(auth: FastplayAuthStore = .shared) {
+    init(auth: FastplayAuthStore = .shared, sessions: SessionStore) {
         self.auth = auth
+        self.sessions = sessions
         super.init()
+    }
+
+    /// True while the board window is on screen — the agent-start handler uses
+    /// this to decide whether to keep the board up and open a run tab in it.
+    var isVisible: Bool {
+        window?.isVisible ?? false
     }
 
     func show() {
@@ -18,7 +26,7 @@ final class BoardWindowController: NSObject, NSWindowDelegate {
             return
         }
 
-        let root = BoardView(auth: auth)
+        let root = BoardView(auth: auth, sessions: sessions)
         let hosting = NSHostingController(rootView: root)
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1060, height: 680),

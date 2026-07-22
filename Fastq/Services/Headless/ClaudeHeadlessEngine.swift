@@ -133,7 +133,8 @@ enum ClaudeHeadlessEngine {
                         id: id,
                         name: name,
                         summary: toolSummary(name: name, input: input),
-                        isSubagent: isSubagent
+                        isSubagent: isSubagent,
+                        detail: toolDetail(name: name, input: input)
                     ))
                 default:
                     break
@@ -150,7 +151,11 @@ enum ClaudeHeadlessEngine {
             for block in content where block["type"] as? String == "tool_result" {
                 let id = block["tool_use_id"] as? String ?? ""
                 let isError = block["is_error"] as? Bool ?? false
-                events.append(.toolFinished(id: id, ok: !isError))
+                events.append(.toolFinished(
+                    id: id,
+                    ok: !isError,
+                    resultText: resultText(from: block["content"])
+                ))
             }
             return events
 
@@ -198,6 +203,74 @@ enum ClaudeHeadlessEngine {
             }
             return ""
         }
+    }
+
+    /// Full argument capture for the expandable row. Every lookup is
+    /// optional — an unexpected shape degrades to `rawInput` rather than
+    /// losing the call.
+    static func toolDetail(name: String, input: [String: Any]) -> ToolCallDetail {
+        var detail = ToolCallDetail(kind: ToolDetailKind.infer(toolName: name))
+        detail.filePath = input["file_path"] as? String ?? input["path"] as? String
+        detail.oldString = input["old_string"] as? String
+        detail.newString = input["new_string"] as? String
+        detail.content = input["content"] as? String ?? input["new_source"] as? String
+        detail.command = input["command"] as? String
+        detail.pattern = input["pattern"] as? String
+            ?? input["query"] as? String
+            ?? input["url"] as? String
+        if detail.pattern != nil || detail.command == nil {
+            detail.searchPath = input["path"] as? String
+        }
+        if let rawEdits = input["edits"] as? [[String: Any]] {
+            let patches = rawEdits.compactMap { edit -> ToolEditPatch? in
+                let old = edit["old_string"] as? String
+                let new = edit["new_string"] as? String
+                guard old != nil || new != nil else { return nil }
+                return ToolEditPatch(oldString: old ?? "", newString: new ?? "")
+            }
+            if !patches.isEmpty { detail.edits = patches }
+        }
+        // Keep the raw args for anything we do not model (MCP tools, Task,
+        // TodoWrite) so "other" rows still expand into something useful.
+        if detail.isEmpty || detail.kind == .other {
+            detail.rawInput = prettyJSON(input)
+        }
+        return detail.capped()
+    }
+
+    /// tool_result `content` is either a plain string or a block array.
+    static func resultText(from value: Any?) -> String? {
+        var text: String?
+        switch value {
+        case let string as String:
+            text = string
+        case let blocks as [[String: Any]]:
+            let parts = blocks.compactMap { block -> String? in
+                if let inner = block["text"] as? String { return inner }
+                if block["type"] as? String == "image" { return "[image]" }
+                return nil
+            }
+            text = parts.isEmpty ? nil : parts.joined(separator: "\n")
+        case let blocks as [Any]:
+            text = blocks.compactMap { $0 as? String }.joined(separator: "\n")
+        case let dict as [String: Any]:
+            text = prettyJSON(dict)
+        default:
+            text = nil
+        }
+        guard let text, !text.isEmpty else { return nil }
+        return ToolDetailLimits.cap(text, ToolDetailLimits.result)
+    }
+
+    static func prettyJSON(_ object: Any) -> String? {
+        guard JSONSerialization.isValidJSONObject(object),
+              let data = try? JSONSerialization.data(
+                withJSONObject: object,
+                options: [.prettyPrinted, .sortedKeys]
+              ),
+              let text = String(data: data, encoding: .utf8),
+              text != "{}" else { return nil }
+        return text
     }
 
     /// Display name for a tool row ("read", "bash" — lowercase like the design).

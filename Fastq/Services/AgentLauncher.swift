@@ -40,7 +40,8 @@ final class AgentLauncher {
         context: AgentLaunchContext,
         tool: ToolConfig,
         model: AgentModelOption,
-        attachments: [PromptAttachment]
+        attachments: [PromptAttachment],
+        taskLink: AgentTaskLink? = nil
     ) throws -> AgentSession {
         let cleaned = Self.stripTaskMentionTokens(from: prompt)
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -75,6 +76,15 @@ final class AgentLauncher {
             composedPrompt = composePrompt(prompt: prompt, attachments: attachments, context: context)
         }
 
+        // Fall back to the first resolved `#task:` mention when the caller
+        // didn't supply task details (e.g. typed `#task:<id>` by hand).
+        var link = taskLink ?? AgentTaskLink()
+        if let task = context.linkedTasks.first {
+            if link.taskID == nil { link.taskID = task.id }
+            if link.taskTitle == nil { link.taskTitle = task.title }
+        }
+        let resolvedLink = link.normalized
+
         AgentChatStore.shared.bind(settings: settings)
         let chat = try AgentChatStore.shared.startSession(
             tool: tool.kind,
@@ -83,7 +93,8 @@ final class AgentLauncher {
             model: model,
             prompt: composedPrompt,
             displayText: displayText,
-            attachments: attachments.map(\.name)
+            attachments: attachments.map(\.name),
+            taskLink: resolvedLink
         )
 
         let session = AgentSession(
@@ -97,7 +108,8 @@ final class AgentLauncher {
             processIdentifier: nil,
             terminalWindowID: nil,
             status: .running,
-            isChat: true
+            isChat: true,
+            taskLink: resolvedLink
         )
         sessions.add(session)
         return session
