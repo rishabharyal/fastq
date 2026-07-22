@@ -3,26 +3,10 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 56;
+	objectVersion = 60;
 	objects = {
 
 /* Begin PBXBuildFile section */
-		A100000000000000000000D1 /* AgentComposerBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000000000000D1 /* AgentComposerBar.swift */; };
-		A100000000000000000000D2 /* ToolCallDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000000000000D2 /* ToolCallDetailView.swift */; };
-		A100000000000000000000D0 /* ResizeHandle.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000000000000D0 /* ResizeHandle.swift */; };
-		A100000000000000000000C0 /* GitService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000000000000C0 /* GitService.swift */; };
-		A100000000000000000000C1 /* ProjectFilesPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000000000000C1 /* ProjectFilesPane.swift */; };
-		A100000000000000000000C2 /* GitDiffPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000000000000C2 /* GitDiffPane.swift */; };
-		A100000000000000000000C3 /* InlineTerminalPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000000000000C3 /* InlineTerminalPane.swift */; };
-		A100000000000000000000C4 /* AgentRunView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000000000000C4 /* AgentRunView.swift */; };
-		A10000000000000000000060 /* ChatRichContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000060 /* ChatRichContent.swift */; };
-		A10000000000000000000061 /* katex in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000061 /* katex */; };
-		A100000000000000000000B0 /* ChatRenderer in Resources */ = {isa = PBXBuildFile; fileRef = A200000000000000000000B0 /* ChatRenderer */; };
-		A10000000000000000000050 /* PTYProcess.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000050 /* PTYProcess.swift */; };
-		A10000000000000000000051 /* PTYHelper.c in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000051 /* PTYHelper.c */; };
-		A10000000000000000000052 /* TerminalSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000052 /* TerminalSession.swift */; };
-		A10000000000000000000053 /* CreateSessionRequest.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000053 /* CreateSessionRequest.swift */; };
-		A10000000000000000000054 /* GhosttyTerminalHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000054 /* GhosttyTerminalHost.swift */; };
 		A10000000000000000000001 /* FastqApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000001 /* FastqApp.swift */; };
 		A10000000000000000000002 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000002 /* Models.swift */; };
 		A10000000000000000000003 /* AppSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000003 /* AppSettings.swift */; };
@@ -41,10 +25,6 @@
 		A10000000000000000000011 /* ProjectPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000013 /* ProjectPickerView.swift */; };
 		A10000000000000000000012 /* PermissionsHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000014 /* PermissionsHelper.swift */; };
 		A10000000000000000000013 /* LauncherKeyRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000015 /* LauncherKeyRouter.swift */; };
-		A10000000000000000000032 /* FastqTerminalChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000032 /* FastqTerminalChrome.swift */; };
-						A10000000000000000000040 /* GhosttyTerminal in Frameworks */ = {isa = PBXBuildFile; productRef = A20000000000000000000040 /* GhosttyTerminal */; };
-		A10000000000000000000041 /* GhosttyTheme in Frameworks */ = {isa = PBXBuildFile; productRef = A20000000000000000000041 /* GhosttyTheme */; };
-		A10000000000000000000043 /* MSDisplayLink in Frameworks */ = {isa = PBXBuildFile; productRef = A20000000000000000000043 /* MSDisplayLink */; };
 		A10000000000000000000016 /* FolderPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000018 /* FolderPicker.swift */; };
 		A10000000000000000000017 /* SettingsWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000019 /* SettingsWindowController.swift */; };
 		A10000000000000000000018 /* HotkeyShortcut.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000001A /* HotkeyShortcut.swift */; };
@@ -54,9 +34,22 @@
 		A1000000000000000000001C /* FileMentionIndex.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000001E /* FileMentionIndex.swift */; };
 		A1000000000000000000001D /* VoiceDictationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000001F /* VoiceDictationService.swift */; };
 		A1000000000000000000001F /* WhisperCPPTranscriber.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000022 /* WhisperCPPTranscriber.swift */; };
+		A10000000000000000000020 /* whisper.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = A20000000000000000000023 /* whisper.xcframework */; };
+		A10000000000000000000021 /* whisper.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = A20000000000000000000023 /* whisper.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		A10000000000000000000030 /* ChatService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000030 /* ChatService.swift */; };
 		A10000000000000000000031 /* ChatModeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000031 /* ChatModeView.swift */; };
+		A10000000000000000000032 /* FastqTerminalChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000032 /* FastqTerminalChrome.swift */; };
 		A10000000000000000000033 /* ChatHistoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000033 /* ChatHistoryStore.swift */; };
+		A10000000000000000000040 /* GhosttyTerminal in Frameworks */ = {isa = PBXBuildFile; productRef = A20000000000000000000040 /* GhosttyTerminal */; };
+		A10000000000000000000041 /* GhosttyTheme in Frameworks */ = {isa = PBXBuildFile; productRef = A20000000000000000000041 /* GhosttyTheme */; };
+		A10000000000000000000043 /* MSDisplayLink in Frameworks */ = {isa = PBXBuildFile; productRef = A20000000000000000000043 /* MSDisplayLink */; };
+		A10000000000000000000050 /* PTYProcess.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000050 /* PTYProcess.swift */; };
+		A10000000000000000000051 /* PTYHelper.c in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000051 /* PTYHelper.c */; };
+		A10000000000000000000052 /* TerminalSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000052 /* TerminalSession.swift */; };
+		A10000000000000000000053 /* CreateSessionRequest.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000053 /* CreateSessionRequest.swift */; };
+		A10000000000000000000054 /* GhosttyTerminalHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000054 /* GhosttyTerminalHost.swift */; };
+		A10000000000000000000060 /* ChatRichContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000060 /* ChatRichContent.swift */; };
+		A10000000000000000000061 /* katex in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000061 /* katex */; };
 		A10000000000000000000070 /* FastplayModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000070 /* FastplayModels.swift */; };
 		A10000000000000000000071 /* FastplayAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000071 /* FastplayAPIClient.swift */; };
 		A10000000000000000000072 /* FastplayAuthStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000072 /* FastplayAuthStore.swift */; };
@@ -65,8 +58,15 @@
 		A10000000000000000000075 /* BoardWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000075 /* BoardWindowController.swift */; };
 		A10000000000000000000076 /* BoardModeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000076 /* BoardModeView.swift */; };
 		A10000000000000000000077 /* ProjectFolderStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000077 /* ProjectFolderStore.swift */; };
-		A1000000000000000000007B /* StartAgentForTask.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000007B /* StartAgentForTask.swift */; };
 		A10000000000000000000078 /* LauncherMetrics.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000078 /* LauncherMetrics.swift */; };
+		A10000000000000000000079 /* AgentActivityRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000079 /* AgentActivityRegistry.swift */; };
+		A1000000000000000000007A /* ClaudeCodeActivityAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000007A /* ClaudeCodeActivityAdapter.swift */; };
+		A1000000000000000000007B /* StartAgentForTask.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000007B /* StartAgentForTask.swift */; };
+		A10000000000000000000080 /* BoardComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000080 /* BoardComponents.swift */; };
+		A10000000000000000000081 /* TaskComposerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000081 /* TaskComposerView.swift */; };
+		A10000000000000000000082 /* TaskDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000082 /* TaskDetailView.swift */; };
+		A1000000000000000000E9 /* FloatingBannerPresenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000E9 /* FloatingBannerPresenter.swift */; };
+		A10000000000000000000083 /* TaskDetailStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000083 /* TaskDetailStore.swift */; };
 		A10000000000000000000090 /* FQTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000090 /* FQTheme.swift */; };
 		A10000000000000000000091 /* FQButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000091 /* FQButton.swift */; };
 		A10000000000000000000092 /* FQChip.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000092 /* FQChip.swift */; };
@@ -83,34 +83,40 @@
 		A1000000000000000000009D /* MarkdownText.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000009D /* MarkdownText.swift */; };
 		A1000000000000000000009E /* AgentChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000009E /* AgentChatView.swift */; };
 		A1000000000000000000009F /* AgentChatComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000009F /* AgentChatComponents.swift */; };
-		A10000000000000000000080 /* BoardComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000080 /* BoardComponents.swift */; };
-		A10000000000000000000081 /* TaskComposerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000081 /* TaskComposerView.swift */; };
-		A10000000000000000000082 /* TaskDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000082 /* TaskDetailView.swift */; };
-		A10000000000000000000083 /* TaskDetailStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000083 /* TaskDetailStore.swift */; };
-		A10000000000000000000079 /* AgentActivityRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000079 /* AgentActivityRegistry.swift */; };
-		A1000000000000000000007A /* ClaudeCodeActivityAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000007A /* ClaudeCodeActivityAdapter.swift */; };
-		A10000000000000000000020 /* whisper.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = A20000000000000000000023 /* whisper.xcframework */; };
-		A10000000000000000000021 /* whisper.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = A20000000000000000000023 /* whisper.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		A100000000000000000000B0 /* ChatRenderer in Resources */ = {isa = PBXBuildFile; fileRef = A200000000000000000000B0 /* ChatRenderer */; };
+		A100000000000000000000C0 /* GitService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000000000000C0 /* GitService.swift */; };
+		A100000000000000000000C1 /* ProjectFilesPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000000000000C1 /* ProjectFilesPane.swift */; };
+		A100000000000000000000C2 /* GitDiffPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000000000000C2 /* GitDiffPane.swift */; };
+		A100000000000000000000C3 /* InlineTerminalPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000000000000C3 /* InlineTerminalPane.swift */; };
+		A100000000000000000000C4 /* AgentRunView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000000000000C4 /* AgentRunView.swift */; };
+		A100000000000000000000D0 /* ResizeHandle.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000000000000D0 /* ResizeHandle.swift */; };
+		A100000000000000000000D1 /* AgentComposerBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000000000000D1 /* AgentComposerBar.swift */; };
+		A100000000000000000000D2 /* ToolCallDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000000000000D2 /* ToolCallDetailView.swift */; };
+		A10000000000000000000E0 /* RealtimeModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000E0 /* RealtimeModels.swift */; };
+		A10000000000000000000E1 /* PusherProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000E1 /* PusherProtocol.swift */; };
+		A10000000000000000000E2 /* ReconnectPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000E2 /* ReconnectPolicy.swift */; };
+		A10000000000000000000E3 /* RealtimeTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000E3 /* RealtimeTransport.swift */; };
+		A10000000000000000000E4 /* RealtimeServices.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000E4 /* RealtimeServices.swift */; };
+		A10000000000000000000E5 /* RealtimeEventBus.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000E5 /* RealtimeEventBus.swift */; };
+		A10000000000000000000E6 /* RealtimeNotificationPresenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000E6 /* RealtimeNotificationPresenter.swift */; };
+		A10000000000000000000E7 /* FastplayRealtimeClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000E7 /* FastplayRealtimeClient.swift */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXCopyFilesBuildPhase section */
+		A60000000000000000000003 /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+				A10000000000000000000021 /* whisper.xcframework in Embed Frameworks */,
+			);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
-		A200000000000000000000D1 /* AgentComposerBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentComposerBar.swift; sourceTree = "<group>"; };
-		A200000000000000000000D2 /* ToolCallDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolCallDetailView.swift; sourceTree = "<group>"; };
-		A200000000000000000000D0 /* ResizeHandle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResizeHandle.swift; sourceTree = "<group>"; };
-		A200000000000000000000C0 /* GitService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitService.swift; sourceTree = "<group>"; };
-		A200000000000000000000C1 /* ProjectFilesPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectFilesPane.swift; sourceTree = "<group>"; };
-		A200000000000000000000C2 /* GitDiffPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitDiffPane.swift; sourceTree = "<group>"; };
-		A200000000000000000000C3 /* InlineTerminalPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InlineTerminalPane.swift; sourceTree = "<group>"; };
-		A200000000000000000000C4 /* AgentRunView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRunView.swift; sourceTree = "<group>"; };
-		A20000000000000000000060 /* ChatRichContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatRichContent.swift; sourceTree = "<group>"; };
-		A20000000000000000000061 /* katex */ = {isa = PBXFileReference; lastKnownFileType = folder; name = katex; path = Resources/katex; sourceTree = "<group>"; };
-		A200000000000000000000B0 /* ChatRenderer */ = {isa = PBXFileReference; lastKnownFileType = folder; name = ChatRenderer; path = Resources/ChatRenderer; sourceTree = "<group>"; };
-		A20000000000000000000050 /* PTYProcess.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PTYProcess.swift; sourceTree = "<group>"; };
-		A20000000000000000000051 /* PTYHelper.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = PTYHelper.c; sourceTree = "<group>"; };
-		A20000000000000000000052 /* TerminalSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalSession.swift; sourceTree = "<group>"; };
-		A20000000000000000000053 /* CreateSessionRequest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateSessionRequest.swift; sourceTree = "<group>"; };
-		A20000000000000000000054 /* GhosttyTerminalHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyTerminalHost.swift; sourceTree = "<group>"; };
-		A20000000000000000000055 /* Fastq-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "Fastq-Bridging-Header.h"; sourceTree = "<group>"; };
 		A20000000000000000000001 /* FastqApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FastqApp.swift; sourceTree = "<group>"; };
 		A20000000000000000000002 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		A20000000000000000000003 /* AppSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettings.swift; sourceTree = "<group>"; };
@@ -132,7 +138,6 @@
 		A20000000000000000000013 /* ProjectPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectPickerView.swift; sourceTree = "<group>"; };
 		A20000000000000000000014 /* PermissionsHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionsHelper.swift; sourceTree = "<group>"; };
 		A20000000000000000000015 /* LauncherKeyRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LauncherKeyRouter.swift; sourceTree = "<group>"; };
-		A20000000000000000000032 /* FastqTerminalChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FastqTerminalChrome.swift; sourceTree = "<group>"; };
 		A20000000000000000000018 /* FolderPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolderPicker.swift; sourceTree = "<group>"; };
 		A20000000000000000000019 /* SettingsWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsWindowController.swift; sourceTree = "<group>"; };
 		A2000000000000000000001A /* HotkeyShortcut.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotkeyShortcut.swift; sourceTree = "<group>"; };
@@ -142,9 +147,19 @@
 		A2000000000000000000001E /* FileMentionIndex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileMentionIndex.swift; sourceTree = "<group>"; };
 		A2000000000000000000001F /* VoiceDictationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceDictationService.swift; sourceTree = "<group>"; };
 		A20000000000000000000022 /* WhisperCPPTranscriber.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperCPPTranscriber.swift; sourceTree = "<group>"; };
+		A20000000000000000000023 /* whisper.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = whisper.xcframework; path = Fastq/Vendor/whisper.xcframework; sourceTree = SOURCE_ROOT; };
 		A20000000000000000000030 /* ChatService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatService.swift; sourceTree = "<group>"; };
 		A20000000000000000000031 /* ChatModeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatModeView.swift; sourceTree = "<group>"; };
+		A20000000000000000000032 /* FastqTerminalChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FastqTerminalChrome.swift; sourceTree = "<group>"; };
 		A20000000000000000000033 /* ChatHistoryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatHistoryStore.swift; sourceTree = "<group>"; };
+		A20000000000000000000050 /* PTYProcess.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PTYProcess.swift; sourceTree = "<group>"; };
+		A20000000000000000000051 /* PTYHelper.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = PTYHelper.c; sourceTree = "<group>"; };
+		A20000000000000000000052 /* TerminalSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalSession.swift; sourceTree = "<group>"; };
+		A20000000000000000000053 /* CreateSessionRequest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateSessionRequest.swift; sourceTree = "<group>"; };
+		A20000000000000000000054 /* GhosttyTerminalHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyTerminalHost.swift; sourceTree = "<group>"; };
+		A20000000000000000000055 /* Fastq-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "Fastq-Bridging-Header.h"; sourceTree = "<group>"; };
+		A20000000000000000000060 /* ChatRichContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatRichContent.swift; sourceTree = "<group>"; };
+		A20000000000000000000061 /* katex */ = {isa = PBXFileReference; lastKnownFileType = folder; name = katex; path = Resources/katex; sourceTree = "<group>"; };
 		A20000000000000000000070 /* FastplayModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FastplayModels.swift; sourceTree = "<group>"; };
 		A20000000000000000000071 /* FastplayAPIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FastplayAPIClient.swift; sourceTree = "<group>"; };
 		A20000000000000000000072 /* FastplayAuthStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FastplayAuthStore.swift; sourceTree = "<group>"; };
@@ -153,8 +168,15 @@
 		A20000000000000000000075 /* BoardWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardWindowController.swift; sourceTree = "<group>"; };
 		A20000000000000000000076 /* BoardModeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardModeView.swift; sourceTree = "<group>"; };
 		A20000000000000000000077 /* ProjectFolderStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectFolderStore.swift; sourceTree = "<group>"; };
-		A2000000000000000000007B /* StartAgentForTask.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StartAgentForTask.swift; sourceTree = "<group>"; };
 		A20000000000000000000078 /* LauncherMetrics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LauncherMetrics.swift; sourceTree = "<group>"; };
+		A20000000000000000000079 /* AgentActivityRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentActivityRegistry.swift; sourceTree = "<group>"; };
+		A2000000000000000000007A /* ClaudeCodeActivityAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeCodeActivityAdapter.swift; sourceTree = "<group>"; };
+		A2000000000000000000007B /* StartAgentForTask.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StartAgentForTask.swift; sourceTree = "<group>"; };
+		A20000000000000000000080 /* BoardComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardComponents.swift; sourceTree = "<group>"; };
+		A20000000000000000000081 /* TaskComposerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskComposerView.swift; sourceTree = "<group>"; };
+		A20000000000000000000082 /* TaskDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskDetailView.swift; sourceTree = "<group>"; };
+		A2000000000000000000E9 /* FloatingBannerPresenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloatingBannerPresenter.swift; sourceTree = "<group>"; };
+		A20000000000000000000083 /* TaskDetailStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskDetailStore.swift; sourceTree = "<group>"; };
 		A20000000000000000000090 /* FQTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FQTheme.swift; sourceTree = "<group>"; };
 		A20000000000000000000091 /* FQButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FQButton.swift; sourceTree = "<group>"; };
 		A20000000000000000000092 /* FQChip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FQChip.swift; sourceTree = "<group>"; };
@@ -171,13 +193,23 @@
 		A2000000000000000000009D /* MarkdownText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownText.swift; sourceTree = "<group>"; };
 		A2000000000000000000009E /* AgentChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentChatView.swift; sourceTree = "<group>"; };
 		A2000000000000000000009F /* AgentChatComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentChatComponents.swift; sourceTree = "<group>"; };
-		A20000000000000000000080 /* BoardComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardComponents.swift; sourceTree = "<group>"; };
-		A20000000000000000000081 /* TaskComposerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskComposerView.swift; sourceTree = "<group>"; };
-		A20000000000000000000082 /* TaskDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskDetailView.swift; sourceTree = "<group>"; };
-		A20000000000000000000083 /* TaskDetailStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskDetailStore.swift; sourceTree = "<group>"; };
-		A20000000000000000000079 /* AgentActivityRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentActivityRegistry.swift; sourceTree = "<group>"; };
-		A2000000000000000000007A /* ClaudeCodeActivityAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeCodeActivityAdapter.swift; sourceTree = "<group>"; };
-		A20000000000000000000023 /* whisper.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = whisper.xcframework; path = Fastq/Vendor/whisper.xcframework; sourceTree = SOURCE_ROOT; };
+		A200000000000000000000B0 /* ChatRenderer */ = {isa = PBXFileReference; lastKnownFileType = folder; name = ChatRenderer; path = Resources/ChatRenderer; sourceTree = "<group>"; };
+		A200000000000000000000C0 /* GitService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitService.swift; sourceTree = "<group>"; };
+		A200000000000000000000C1 /* ProjectFilesPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectFilesPane.swift; sourceTree = "<group>"; };
+		A200000000000000000000C2 /* GitDiffPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitDiffPane.swift; sourceTree = "<group>"; };
+		A200000000000000000000C3 /* InlineTerminalPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InlineTerminalPane.swift; sourceTree = "<group>"; };
+		A200000000000000000000C4 /* AgentRunView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRunView.swift; sourceTree = "<group>"; };
+		A200000000000000000000D0 /* ResizeHandle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResizeHandle.swift; sourceTree = "<group>"; };
+		A200000000000000000000D1 /* AgentComposerBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentComposerBar.swift; sourceTree = "<group>"; };
+		A200000000000000000000D2 /* ToolCallDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolCallDetailView.swift; sourceTree = "<group>"; };
+		A20000000000000000000E0 /* RealtimeModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RealtimeModels.swift; sourceTree = "<group>"; };
+		A20000000000000000000E1 /* PusherProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PusherProtocol.swift; sourceTree = "<group>"; };
+		A20000000000000000000E2 /* ReconnectPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReconnectPolicy.swift; sourceTree = "<group>"; };
+		A20000000000000000000E3 /* RealtimeTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RealtimeTransport.swift; sourceTree = "<group>"; };
+		A20000000000000000000E4 /* RealtimeServices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RealtimeServices.swift; sourceTree = "<group>"; };
+		A20000000000000000000E5 /* RealtimeEventBus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RealtimeEventBus.swift; sourceTree = "<group>"; };
+		A20000000000000000000E6 /* RealtimeNotificationPresenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RealtimeNotificationPresenter.swift; sourceTree = "<group>"; };
+		A20000000000000000000E7 /* FastplayRealtimeClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FastplayRealtimeClient.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -196,17 +228,6 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		A4000000000000000000000A /* Terminal */ = {
-			isa = PBXGroup;
-			children = (
-				A20000000000000000000050 /* PTYProcess.swift */,
-				A20000000000000000000051 /* PTYHelper.c */,
-				A20000000000000000000052 /* TerminalSession.swift */,
-				A20000000000000000000053 /* CreateSessionRequest.swift */,
-			);
-			path = Terminal;
-			sourceTree = "<group>";
-		};
 		A40000000000000000000001 = {
 			isa = PBXGroup;
 			children = (
@@ -269,72 +290,6 @@
 			path = Services;
 			sourceTree = "<group>";
 		};
-		A400000000000000000000C0 /* Board */ = {
-			isa = PBXGroup;
-			children = (
-				A200000000000000000000D0 /* ResizeHandle.swift */,
-				A200000000000000000000C0 /* GitService.swift */,
-				A200000000000000000000C1 /* ProjectFilesPane.swift */,
-				A200000000000000000000C2 /* GitDiffPane.swift */,
-				A200000000000000000000C3 /* InlineTerminalPane.swift */,
-				A200000000000000000000C4 /* AgentRunView.swift */,
-			);
-			path = Board;
-			sourceTree = "<group>";
-		};
-		A40000000000000000000090 /* DesignSystem */ = {
-			isa = PBXGroup;
-			children = (
-				A20000000000000000000090 /* FQTheme.swift */,
-				A20000000000000000000091 /* FQButton.swift */,
-				A20000000000000000000092 /* FQChip.swift */,
-				A20000000000000000000093 /* FQCard.swift */,
-				A20000000000000000000094 /* FQInput.swift */,
-				A20000000000000000000095 /* FQAvatar.swift */,
-			);
-			path = DesignSystem;
-			sourceTree = "<group>";
-		};
-		A40000000000000000000091 /* Headless */ = {
-			isa = PBXGroup;
-			children = (
-				A20000000000000000000096 /* AgentChatModels.swift */,
-				A20000000000000000000097 /* HeadlessProcessRunner.swift */,
-				A20000000000000000000098 /* ClaudeHeadlessEngine.swift */,
-				A20000000000000000000099 /* CursorHeadlessEngine.swift */,
-				A2000000000000000000009A /* PermissionBridge.swift */,
-				A2000000000000000000009B /* FastqApproveServer.swift */,
-				A2000000000000000000009C /* AgentChatStore.swift */,
-			);
-			path = Headless;
-			sourceTree = "<group>";
-		};
-		A40000000000000000000092 /* AgentChat */ = {
-			isa = PBXGroup;
-			children = (
-				A200000000000000000000D1 /* AgentComposerBar.swift */,
-				A200000000000000000000D2 /* ToolCallDetailView.swift */,
-				A2000000000000000000009D /* MarkdownText.swift */,
-				A2000000000000000000009E /* AgentChatView.swift */,
-				A2000000000000000000009F /* AgentChatComponents.swift */,
-			);
-			path = AgentChat;
-			sourceTree = "<group>";
-		};
-		A40000000000000000000070 /* Fastplay */ = {
-			isa = PBXGroup;
-			children = (
-				A20000000000000000000070 /* FastplayModels.swift */,
-				A20000000000000000000071 /* FastplayAPIClient.swift */,
-				A20000000000000000000072 /* FastplayAuthStore.swift */,
-				A20000000000000000000073 /* BoardStore.swift */,
-				A20000000000000000000077 /* ProjectFolderStore.swift */,
-				A2000000000000000000007B /* StartAgentForTask.swift */,
-				A20000000000000000000083 /* TaskDetailStore.swift */,
-			);
-			path = Fastplay;
-			sourceTree = "<group>";
-		};
 		A40000000000000000000005 /* Controllers */ = {
 			isa = PBXGroup;
 			children = (
@@ -381,21 +336,85 @@
 			name = Frameworks;
 			sourceTree = "<group>";
 		};
-		A40000000000000000000009 /* Shared */ = {
-			isa = PBXGroup;
-			children = (
-				A20000000000000000000032 /* FastqTerminalChrome.swift */,
-			);
-			name = Shared;
-			path = Shared;
-			sourceTree = "<group>";
-		};
 		A40000000000000000000008 /* Products */ = {
 			isa = PBXGroup;
 			children = (
 				A2000000000000000000000D /* Fastq.app */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		A40000000000000000000009 /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000032 /* FastqTerminalChrome.swift */,
+			);
+			path = Shared;
+			sourceTree = "<group>";
+		};
+		A4000000000000000000000A /* Terminal */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000050 /* PTYProcess.swift */,
+				A20000000000000000000051 /* PTYHelper.c */,
+				A20000000000000000000052 /* TerminalSession.swift */,
+				A20000000000000000000053 /* CreateSessionRequest.swift */,
+			);
+			path = Terminal;
+			sourceTree = "<group>";
+		};
+		A40000000000000000000070 /* Fastplay */ = {
+			isa = PBXGroup;
+			children = (
+				A400000000000000000000E8 /* Realtime */,
+				A20000000000000000000070 /* FastplayModels.swift */,
+				A20000000000000000000071 /* FastplayAPIClient.swift */,
+				A20000000000000000000072 /* FastplayAuthStore.swift */,
+				A20000000000000000000073 /* BoardStore.swift */,
+				A20000000000000000000077 /* ProjectFolderStore.swift */,
+				A2000000000000000000007B /* StartAgentForTask.swift */,
+				A20000000000000000000083 /* TaskDetailStore.swift */,
+			);
+			path = Fastplay;
+			sourceTree = "<group>";
+		};
+		A40000000000000000000090 /* DesignSystem */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000090 /* FQTheme.swift */,
+				A20000000000000000000091 /* FQButton.swift */,
+				A20000000000000000000092 /* FQChip.swift */,
+				A20000000000000000000093 /* FQCard.swift */,
+				A20000000000000000000094 /* FQInput.swift */,
+				A20000000000000000000095 /* FQAvatar.swift */,
+			);
+			path = DesignSystem;
+			sourceTree = "<group>";
+		};
+		A40000000000000000000091 /* Headless */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000096 /* AgentChatModels.swift */,
+				A20000000000000000000097 /* HeadlessProcessRunner.swift */,
+				A20000000000000000000098 /* ClaudeHeadlessEngine.swift */,
+				A20000000000000000000099 /* CursorHeadlessEngine.swift */,
+				A2000000000000000000009A /* PermissionBridge.swift */,
+				A2000000000000000000009B /* FastqApproveServer.swift */,
+				A2000000000000000000009C /* AgentChatStore.swift */,
+			);
+			path = Headless;
+			sourceTree = "<group>";
+		};
+		A40000000000000000000092 /* AgentChat */ = {
+			isa = PBXGroup;
+			children = (
+				A200000000000000000000D1 /* AgentComposerBar.swift */,
+				A200000000000000000000D2 /* ToolCallDetailView.swift */,
+				A2000000000000000000009D /* MarkdownText.swift */,
+				A2000000000000000000009E /* AgentChatView.swift */,
+				A2000000000000000000009F /* AgentChatComponents.swift */,
+			);
+			path = AgentChat;
 			sourceTree = "<group>";
 		};
 		A400000000000000000000AA /* AgentActivity */ = {
@@ -405,6 +424,35 @@
 				A2000000000000000000007A /* ClaudeCodeActivityAdapter.swift */,
 			);
 			path = AgentActivity;
+			sourceTree = "<group>";
+		};
+		A400000000000000000000C0 /* Board */ = {
+			isa = PBXGroup;
+			children = (
+				A200000000000000000000D0 /* ResizeHandle.swift */,
+				A200000000000000000000C0 /* GitService.swift */,
+				A200000000000000000000C1 /* ProjectFilesPane.swift */,
+				A200000000000000000000C2 /* GitDiffPane.swift */,
+				A200000000000000000000C3 /* InlineTerminalPane.swift */,
+				A200000000000000000000C4 /* AgentRunView.swift */,
+			);
+			path = Board;
+			sourceTree = "<group>";
+		};
+		A400000000000000000000E8 /* Realtime */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000E0 /* RealtimeModels.swift */,
+				A20000000000000000000E1 /* PusherProtocol.swift */,
+				A20000000000000000000E2 /* ReconnectPolicy.swift */,
+				A20000000000000000000E3 /* RealtimeTransport.swift */,
+				A20000000000000000000E4 /* RealtimeServices.swift */,
+				A20000000000000000000E5 /* RealtimeEventBus.swift */,
+				A20000000000000000000E6 /* RealtimeNotificationPresenter.swift */,
+				A20000000000000000000E7 /* FastplayRealtimeClient.swift */,
+				A2000000000000000000E9 /* FloatingBannerPresenter.swift */,
+			);
+			path = Realtime;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -469,20 +517,6 @@
 			);
 		};
 /* End PBXProject section */
-
-/* Begin PBXCopyFilesBuildPhase section */
-		A60000000000000000000003 /* Embed Frameworks */ = {
-			isa = PBXCopyFilesBuildPhase;
-			buildActionMask = 2147483647;
-			dstPath = "";
-			dstSubfolderSpec = 10;
-			files = (
-				A10000000000000000000021 /* whisper.xcframework in Embed Frameworks */,
-			);
-			name = "Embed Frameworks";
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXResourcesBuildPhase section */
 		A60000000000000000000002 /* Resources */ = {
@@ -563,6 +597,15 @@
 				A10000000000000000000080 /* BoardComponents.swift in Sources */,
 				A10000000000000000000081 /* TaskComposerView.swift in Sources */,
 				A10000000000000000000082 /* TaskDetailView.swift in Sources */,
+				A10000000000000000000E0 /* RealtimeModels.swift in Sources */,
+				A10000000000000000000E1 /* PusherProtocol.swift in Sources */,
+				A10000000000000000000E2 /* ReconnectPolicy.swift in Sources */,
+				A10000000000000000000E3 /* RealtimeTransport.swift in Sources */,
+				A10000000000000000000E4 /* RealtimeServices.swift in Sources */,
+				A10000000000000000000E5 /* RealtimeEventBus.swift in Sources */,
+				A10000000000000000000E6 /* RealtimeNotificationPresenter.swift in Sources */,
+				A10000000000000000000E7 /* FastplayRealtimeClient.swift in Sources */,
+				A1000000000000000000E9 /* FloatingBannerPresenter.swift in Sources */,
 				A10000000000000000000083 /* TaskDetailStore.swift in Sources */,
 				A10000000000000000000074 /* BoardView.swift in Sources */,
 				A100000000000000000000D1 /* AgentComposerBar.swift in Sources */,
@@ -621,13 +664,24 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				AUTOMATION_APPLE_EVENTS = NO;
 				CODE_SIGN_ENTITLEMENTS = Fastq/Fastq.entitlements;
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 5U2CF4RYJ8;
 				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = YES;
+				ENABLE_RESOURCE_ACCESS_CALENDARS = NO;
+				ENABLE_RESOURCE_ACCESS_CAMERA = NO;
+				ENABLE_RESOURCE_ACCESS_CONTACTS = NO;
+				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
+				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = NO;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Fastq/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = FastQ;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -636,6 +690,12 @@
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = app.fastq.launcher;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				RUNTIME_EXCEPTION_ALLOW_DYLD_ENVIRONMENT_VARIABLES = NO;
+				RUNTIME_EXCEPTION_ALLOW_JIT = NO;
+				RUNTIME_EXCEPTION_ALLOW_UNSIGNED_EXECUTABLE_MEMORY = NO;
+				RUNTIME_EXCEPTION_DEBUGGING_TOOL = NO;
+				RUNTIME_EXCEPTION_DISABLE_EXECUTABLE_PAGE_PROTECTION = NO;
+				RUNTIME_EXCEPTION_DISABLE_LIBRARY_VALIDATION = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_OBJC_BRIDGING_HEADER = "Fastq/Fastq-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
@@ -647,13 +707,24 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				AUTOMATION_APPLE_EVENTS = NO;
 				CODE_SIGN_ENTITLEMENTS = Fastq/Fastq.entitlements;
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 5U2CF4RYJ8;
 				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = YES;
+				ENABLE_RESOURCE_ACCESS_CALENDARS = NO;
+				ENABLE_RESOURCE_ACCESS_CAMERA = NO;
+				ENABLE_RESOURCE_ACCESS_CONTACTS = NO;
+				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
+				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = NO;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Fastq/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = FastQ;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -662,6 +733,12 @@
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = app.fastq.launcher;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				RUNTIME_EXCEPTION_ALLOW_DYLD_ENVIRONMENT_VARIABLES = NO;
+				RUNTIME_EXCEPTION_ALLOW_JIT = NO;
+				RUNTIME_EXCEPTION_ALLOW_UNSIGNED_EXECUTABLE_MEMORY = NO;
+				RUNTIME_EXCEPTION_DEBUGGING_TOOL = NO;
+				RUNTIME_EXCEPTION_DISABLE_EXECUTABLE_PAGE_PROTECTION = NO;
+				RUNTIME_EXCEPTION_DISABLE_LIBRARY_VALIDATION = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_OBJC_BRIDGING_HEADER = "Fastq/Fastq-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
@@ -727,7 +804,6 @@
 			productName = MSDisplayLink;
 		};
 /* End XCSwiftPackageProductDependency section */
-
 	};
 	rootObject = A80000000000000000000001 /* Project object */;
 }

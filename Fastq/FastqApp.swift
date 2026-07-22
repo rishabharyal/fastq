@@ -1,5 +1,9 @@
 import SwiftUI
 import AppKit
+import Combine
+import os
+
+private let realtimeBootLog = Logger(subsystem: "app.fastq.launcher", category: "realtime")
 
 /// Custom entry point: when the Claude CLI spawns this binary as its MCP
 /// permission-prompt server (`Fastq --fastq-approve <port> <token>`), run
@@ -110,6 +114,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var onboardingController: OnboardingWindowController?
     private var settingsController: SettingsWindowController?
     private var boardController: BoardWindowController?
+    private var realtime: FastplayRealtimeClient?
+    private var realtimeSessionObserver: AnyCancellable?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -152,7 +158,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Task {
             await auth.restoreSession()
             AssignedTasksStore.shared.refresh()
+            startRealtimeIfSignedIn()
         }
+
+        realtimeBootLog.info("realtime: app launched, wiring observers")
+        observeRealtimeSessionChanges()
+        observeWakeForRealtime()
 
         // Keep the menu's assigned-task list fresh in the background.
         Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { _ in
@@ -168,6 +179,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         false
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        // Close the socket deliberately so the server sees a clean disconnect
+        // rather than waiting for the connection to time out.
+        guard let realtime else { return }
+        Task { await realtime.stop() }
     }
 
     func openSettings(tab: SettingsView.SettingsTab = .projects) {
@@ -207,5 +225,91 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if settings.needsSetup {
             showOnboarding(force: true)
         }
+    }
+
+    // MARK: - Realtime notifications
+
+    /// Opens the websocket once a session exists.
+    ///
+    /// Connecting is pointless before sign-in: channel authorization needs a
+    /// token, so an early socket would only fail and back off.
+    private func startRealtimeIfSignedIn() {
+        guard auth.isLoggedIn else {
+            realtimeBootLog.info("realtime: not starting, signed out")
+            return
+        }
+        guard realtime == nil else {
+            realtimeBootLog.info("realtime: already running")
+            return
+        }
+        realtimeBootLog.info("realtime: starting client")
+
+        let services = FastplayRealtimeServices()
+
+        let system = SystemNotificationPresenter { notification in
+            // The UNUserNotificationCenter delegate callback is not main-isolated.
+            Task { @MainActor [weak self] in
+                self?.openTask(from: notification)
+            }
+        }
+        let banner = FloatingBannerPresenter { [weak self] notification in
+            self?.openTask(from: notification)
+        }
+
+        // Prefer real macOS notifications; fall back to an in-app banner when
+        // the system refuses them — notably for ad-hoc signed builds, where
+        // UNUserNotificationCenter rejects the app outright.
+        let presenter = ChainedNotificationPresenter(presenters: [system, banner])
+
+        let client = FastplayRealtimeClient(
+            config: services,
+            authorizer: services,
+            backfill: services,
+            presenter: presenter
+        )
+        realtime = client
+        Task { await client.start() }
+    }
+
+    /// Reconnects the socket when the machine wakes.
+    ///
+    /// A websocket can survive sleep as an open-but-dead TCP connection, so
+    /// waiting for the liveness watchdog would leave a window where
+    /// notifications are silently missed. Registered once for the app's
+    /// lifetime — doing it per sign-in would stack an observer per session.
+    private func observeWakeForRealtime() {
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                guard let client = self?.realtime else { return }
+                await client.reconnectNow()
+            }
+        }
+    }
+
+    /// Starts or stops the socket as the user signs in and out.
+    private func observeRealtimeSessionChanges() {
+        realtimeSessionObserver = auth.$isLoggedIn
+            .removeDuplicates()
+            .sink { [weak self] isLoggedIn in
+                Task { @MainActor in
+                    guard let self else { return }
+                    if isLoggedIn {
+                        self.startRealtimeIfSignedIn()
+                    } else {
+                        await self.realtime?.stop()
+                        self.realtime = nil
+                    }
+                }
+            }
+    }
+
+    /// Opens the board when a notification banner is clicked.
+    private func openTask(from notification: FastplayRealtimeNotification) {
+        AssignedTasksStore.shared.refresh()
+        openBoards()
     }
 }

@@ -429,6 +429,59 @@ actor FastplayAPIClient {
         return try await getAuthed("/api/search/users", queryItems: items)
     }
 
+    // MARK: - Realtime
+
+    /// Websocket connection details, resolved at runtime rather than hardcoded.
+    func broadcastingConnection() async throws -> FastplayRealtimeConfig {
+        try await getAuthed("/api/broadcasting/connection")
+    }
+
+    /// Authorizes a private websocket channel for the given socket.
+    ///
+    /// `/broadcasting/auth` sits outside the `/api` prefix and answers with a
+    /// bare `{"auth": "..."}` object rather than the usual envelope, so it
+    /// cannot reuse `postAuthed`. It does reuse `request`, and therefore its
+    /// refresh-once-on-401 behaviour, which matters here: a channel is
+    /// authorized only at subscribe time, so a token that expired while the
+    /// machine was asleep would otherwise leave the client permanently silent
+    /// after reconnecting.
+    func authorizeBroadcastChannel(channel: String, socketID: String) async throws -> String {
+        struct Body: Encodable {
+            let socket_id: String
+            let channel_name: String
+        }
+        struct Response: Decodable {
+            let auth: String
+        }
+
+        let response: Response = try await request(
+            "/broadcasting/auth",
+            method: "POST",
+            bodyData: try encoder.encode(Body(socket_id: socketID, channel_name: channel)),
+            authed: true
+        )
+        return response.auth
+    }
+
+    /// Notifications the client may have missed while disconnected.
+    ///
+    /// The stored payload is identical to the websocket payload, so both paths
+    /// decode into the same type.
+    func recentNotifications(limit: Int = 20) async throws -> [FastplayRealtimeNotification] {
+        struct Row: Decodable {
+            let data: FastplayRealtimeNotification
+            let read_at: String?
+        }
+
+        let rows: [Row] = try await getAuthed(
+            "/api/notifications",
+            queryItems: [URLQueryItem(name: "per_page", value: String(limit))]
+        )
+        // A read notification has already been seen on some device; only unread
+        // rows are worth surfacing after a reconnect.
+        return rows.filter { $0.read_at == nil }.map(\.data)
+    }
+
     // MARK: - Internals
 
     private func taskPath(_ workspace: String, _ project: String, _ taskID: String, _ suffix: String) -> String {
