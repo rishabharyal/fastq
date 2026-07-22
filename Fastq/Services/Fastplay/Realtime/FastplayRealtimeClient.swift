@@ -59,11 +59,18 @@ actor FastplayRealtimeClient {
     /// when it reappears in the reconnect backfill.
     private var seenIDs: Set<String> = []
     private var seenOrder: [String] = []
+    /// Whether the first backfill of this session has run. Distinguishes
+    /// "notifications waiting since last time" from "arrived while the socket
+    /// was briefly down" — only the latter is worth interrupting the user for.
+    private var hasSyncedOnce = false
 
     /// Reverb pings every 60s when idle; missing two of those means the socket
     /// is gone even if the OS has not surfaced an error yet.
     private static let activityTimeout: TimeInterval = 150
     private static let seenLimit = 500
+    /// Most banners shown at once after a reconnect; the remainder stay unread
+    /// in the notification list rather than burying the screen.
+    private static let backfillPresentLimit = 3
 
     init(
         transport: RealtimeTransport = URLSessionRealtimeTransport(),
@@ -248,9 +255,32 @@ actor FastplayRealtimeClient {
     private func backfillMissed() async {
         guard let missed = try? await backfill.recentNotifications(limit: 20) else { return }
 
-        // Oldest first, so the newest ends up on top of the notification centre.
-        for notification in missed.reversed() {
+        // On the first connection of a session, treat everything already unread
+        // as history: the user did not just miss it, it was waiting for them.
+        // Replaying it as banners on every launch would be noise. Recording the
+        // ids still matters, so a later reconnect does not present them either.
+        guard hasSyncedOnce else {
+            for notification in missed {
+                remember(notification.id)
+            }
+            hasSyncedOnce = true
+            realtimeLog.info("initial sync: \(missed.count, privacy: .public) unread marked as seen")
+            return
+        }
+
+        // Oldest first, so the newest ends up on top.
+        let toPresent = missed.reversed().filter { !seenIDs.contains($0.id) }
+        if toPresent.isEmpty { return }
+
+        realtimeLog.info("backfilling \(toPresent.count, privacy: .public) missed notification(s)")
+
+        // Cap the burst: after a long outage, showing every missed item at once
+        // buries the screen. The rest stay unread in the notification list.
+        for notification in toPresent.prefix(Self.backfillPresentLimit) {
             await present(notification)
+        }
+        for notification in toPresent.dropFirst(Self.backfillPresentLimit) {
+            remember(notification.id)
         }
     }
 

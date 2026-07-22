@@ -468,18 +468,54 @@ actor FastplayAPIClient {
     /// The stored payload is identical to the websocket payload, so both paths
     /// decode into the same type.
     func recentNotifications(limit: Int = 20) async throws -> [FastplayRealtimeNotification] {
-        struct Row: Decodable {
-            let data: FastplayRealtimeNotification
-            let read_at: String?
-        }
-
-        let rows: [Row] = try await getAuthed(
-            "/api/notifications",
-            queryItems: [URLQueryItem(name: "per_page", value: String(limit))]
+        let raw: Data = try await getAuthedRaw(
+            "/api/notifications?per_page=\(limit)"
         )
-        // A read notification has already been seen on some device; only unread
-        // rows are worth surfacing after a reconnect.
-        return rows.filter { $0.read_at == nil }.map(\.data)
+
+        guard let root = try? JSONSerialization.jsonObject(with: raw) as? [String: Any] else {
+            return []
+        }
+        let rows = (root["data"] as? [[String: Any]]) ?? []
+
+        return rows.compactMap { row -> FastplayRealtimeNotification? in
+            // A read notification has already been seen on some device.
+            guard row["read_at"] is NSNull || row["read_at"] == nil else { return nil }
+            guard var payload = row["data"] as? [String: Any] else { return nil }
+
+            // Rows stored before the server unified its payloads carry only
+            // per-type fields and no rendered copy. Repair them from the row's
+            // class name so history still renders instead of showing a blank.
+            if payload["type"] == nil || payload["body"] == nil {
+                let className = (row["type"] as? String)?.split(separator: "\\").last.map(String.init) ?? ""
+                let taskTitle = payload["title"] as? String ?? payload["task_title"] as? String
+
+                let (kind, heading) = Self.legacyKind(for: className)
+                payload["type"] = kind
+                payload["title"] = heading
+                payload["task_title"] = taskTitle
+                if payload["body"] == nil {
+                    payload["body"] = taskTitle.map { "\(heading): \($0)" } ?? heading
+                }
+            }
+            if payload["id"] == nil, let id = row["id"] as? String {
+                payload["id"] = id
+            }
+
+            guard let encoded = try? JSONSerialization.data(withJSONObject: payload) else { return nil }
+            return try? JSONDecoder().decode(FastplayRealtimeNotification.self, from: encoded)
+        }
+    }
+
+    /// Maps a stored notification class name onto the realtime vocabulary.
+    private static func legacyKind(for className: String) -> (kind: String, heading: String) {
+        switch className {
+        case "TaskAssignedNotification": return ("task.assigned", "Task assigned")
+        case "MentionedInCommentNotification": return ("comment.mentioned", "You were mentioned")
+        case "MentionedInTaskNotification": return ("task.mentioned", "You were mentioned")
+        case "TaskWatcherNotification": return ("unknown", "Task updated")
+        case "MemberJoinedWorkspaceNotification": return ("unknown", "New workspace member")
+        default: return ("unknown", "Notification")
+        }
     }
 
     // MARK: - Internals
