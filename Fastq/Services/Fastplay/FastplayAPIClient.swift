@@ -139,12 +139,14 @@ actor FastplayAPIClient {
         query: String? = nil,
         workspaceID: String? = nil,
         projectID: String? = nil,
+        assigneeID: String? = nil,
         perPage: Int = 40
     ) async throws -> [FastplayTask] {
         let items = taskListQueryItems(
             query: query,
             workspaceID: workspaceID,
             projectID: projectID,
+            assigneeID: assigneeID,
             perPage: perPage
         )
         do {
@@ -177,6 +179,7 @@ actor FastplayAPIClient {
         query: String?,
         workspaceID: String?,
         projectID: String?,
+        assigneeID: String? = nil,
         perPage: Int
     ) -> [URLQueryItem] {
         var items: [URLQueryItem] = [
@@ -194,6 +197,9 @@ actor FastplayAPIClient {
         if let projectID, !projectID.isEmpty {
             items.append(URLQueryItem(name: "project_id", value: projectID))
         }
+        if let assigneeID, !assigneeID.isEmpty {
+            items.append(URLQueryItem(name: "assignee_id", value: assigneeID))
+        }
         return items
     }
 
@@ -203,13 +209,25 @@ actor FastplayAPIClient {
         title: String,
         description: String? = nil,
         columnID: String? = nil,
-        priority: String? = nil
+        priority: String? = nil,
+        startDate: String? = nil,
+        dueDate: String? = nil,
+        labelIDs: [String]? = nil,
+        assigneeIDs: [String]? = nil
     ) async throws -> FastplayTask {
-        var body: [String: String] = ["title": title]
-        if let description, !description.isEmpty { body["description"] = description }
-        if let columnID { body["board_column_id"] = columnID }
-        if let priority, !priority.isEmpty { body["priority"] = priority }
+        var body: [String: AnyEncodable] = ["title": AnyEncodable(title)]
+        if let description, !description.isEmpty { body["description"] = AnyEncodable(description) }
+        if let columnID { body["board_column_id"] = AnyEncodable(columnID) }
+        if let priority, !priority.isEmpty { body["priority"] = AnyEncodable(priority) }
+        if let startDate { body["start_date"] = AnyEncodable(startDate) }
+        if let dueDate { body["due_date"] = AnyEncodable(dueDate) }
+        if let labelIDs, !labelIDs.isEmpty { body["label_ids"] = AnyEncodable(labelIDs) }
+        if let assigneeIDs, !assigneeIDs.isEmpty { body["assignee_ids"] = AnyEncodable(assigneeIDs) }
         return try await postAuthed("/api/workspaces/\(enc(workspace))/projects/\(enc(project))/tasks", body: body)
+    }
+
+    func task(workspace: String, project: String, taskID: String) async throws -> FastplayTask {
+        try await getAuthed("/api/workspaces/\(enc(workspace))/projects/\(enc(project))/tasks/\(enc(taskID))")
     }
 
     func updateTask(
@@ -219,13 +237,19 @@ actor FastplayAPIClient {
         title: String? = nil,
         description: String? = nil,
         priority: String? = nil,
-        status: String? = nil
+        status: String? = nil,
+        startDate: String? = nil,
+        dueDate: String? = nil,
+        assigneeIDs: [String]? = nil
     ) async throws -> FastplayTask {
-        var body: [String: String] = [:]
-        if let title { body["title"] = title }
-        if let description { body["description"] = description }
-        if let priority { body["priority"] = priority }
-        if let status { body["status"] = status }
+        var body: [String: AnyEncodable] = [:]
+        if let title { body["title"] = AnyEncodable(title) }
+        if let description { body["description"] = AnyEncodable(description) }
+        if let priority { body["priority"] = AnyEncodable(priority) }
+        if let status { body["status"] = AnyEncodable(status) }
+        if let startDate { body["start_date"] = AnyEncodable(startDate) }
+        if let dueDate { body["due_date"] = AnyEncodable(dueDate) }
+        if let assigneeIDs { body["assignee_ids"] = AnyEncodable(assigneeIDs) }
         return try await putAuthed("/api/workspaces/\(enc(workspace))/projects/\(enc(project))/tasks/\(enc(taskID))", body: body)
     }
 
@@ -278,7 +302,140 @@ actor FastplayAPIClient {
         )
     }
 
+    func taskAttachments(workspace: String, project: String, taskID: String) async throws -> [FastplayAttachment] {
+        try await getAuthed(taskPath(workspace, project, taskID, "attachments"))
+    }
+
+    /// Streams the raw file bytes (authenticated; the backend has no public URLs).
+    func downloadTaskAttachment(workspace: String, project: String, taskID: String, attachmentID: String) async throws -> Data {
+        try await getAuthedRaw(taskPath(workspace, project, taskID, "attachments/\(enc(attachmentID))"))
+    }
+
+    func deleteTaskAttachment(workspace: String, project: String, taskID: String, attachmentID: String) async throws {
+        let _: FastplayMessageOnly = try await deleteAuthed(taskPath(workspace, project, taskID, "attachments/\(enc(attachmentID))"))
+    }
+
+    // MARK: - Comments
+
+    func comments(workspace: String, project: String, taskID: String) async throws -> [FastplayComment] {
+        try await getAuthed(taskPath(workspace, project, taskID, "comments"))
+    }
+
+    func addComment(workspace: String, project: String, taskID: String, body: String, parentID: String? = nil) async throws -> FastplayComment {
+        var payload: [String: AnyEncodable] = ["body": AnyEncodable(body)]
+        if let parentID, let intID = Int(parentID) {
+            payload["parent_id"] = AnyEncodable(intID)
+        }
+        return try await postAuthed(taskPath(workspace, project, taskID, "comments"), body: payload)
+    }
+
+    func updateComment(workspace: String, project: String, taskID: String, commentID: String, body: String) async throws -> FastplayComment {
+        try await putAuthed(taskPath(workspace, project, taskID, "comments/\(enc(commentID))"), body: ["body": body])
+    }
+
+    func deleteComment(workspace: String, project: String, taskID: String, commentID: String) async throws {
+        let _: FastplayMessageOnly = try await deleteAuthed(taskPath(workspace, project, taskID, "comments/\(enc(commentID))"))
+    }
+
+    // MARK: - Labels
+
+    func labels(workspace: String) async throws -> [FastplayLabel] {
+        try await getAuthed("/api/workspaces/\(enc(workspace))/labels")
+    }
+
+    func createLabel(workspace: String, name: String, color: String) async throws -> FastplayLabel {
+        try await postAuthed("/api/workspaces/\(enc(workspace))/labels", body: ["name": name, "color": color])
+    }
+
+    @discardableResult
+    func attachLabel(workspace: String, project: String, taskID: String, labelID: String) async throws -> [FastplayLabel] {
+        try await postAuthed(taskPath(workspace, project, taskID, "labels"), body: ["label_id": labelID])
+    }
+
+    func detachLabel(workspace: String, project: String, taskID: String, labelID: String) async throws {
+        let _: FastplayMessageOnly = try await deleteAuthed(taskPath(workspace, project, taskID, "labels/\(enc(labelID))"))
+    }
+
+    // MARK: - Subtasks
+
+    func subtasks(workspace: String, project: String, taskID: String) async throws -> [FastplayTask] {
+        try await getAuthed(taskPath(workspace, project, taskID, "subtasks"))
+    }
+
+    func createSubtask(
+        workspace: String,
+        project: String,
+        taskID: String,
+        title: String,
+        description: String? = nil,
+        priority: String? = nil,
+        dueDate: String? = nil
+    ) async throws -> FastplayTask {
+        var body: [String: AnyEncodable] = ["title": AnyEncodable(title)]
+        if let description, !description.isEmpty { body["description"] = AnyEncodable(description) }
+        if let priority, !priority.isEmpty { body["priority"] = AnyEncodable(priority) }
+        if let dueDate { body["due_date"] = AnyEncodable(dueDate) }
+        return try await postAuthed(taskPath(workspace, project, taskID, "subtasks"), body: body)
+    }
+
+    func deleteSubtask(workspace: String, project: String, taskID: String, subtaskID: String) async throws {
+        let _: FastplayMessageOnly = try await deleteAuthed(taskPath(workspace, project, taskID, "subtasks/\(enc(subtaskID))"))
+    }
+
+    // MARK: - Assignees
+
+    @discardableResult
+    func addAssignee(workspace: String, project: String, taskID: String, userID: String) async throws -> [FastplayUser] {
+        try await postAuthed(taskPath(workspace, project, taskID, "assignees"), body: ["user_id": userID])
+    }
+
+    func removeAssignee(workspace: String, project: String, taskID: String, userID: String) async throws {
+        let _: FastplayMessageOnly = try await deleteAuthed(taskPath(workspace, project, taskID, "assignees/\(enc(userID))"))
+    }
+
+    // MARK: - Watchers
+
+    func watchers(workspace: String, project: String, taskID: String) async throws -> [FastplayWatcher] {
+        try await getAuthed(taskPath(workspace, project, taskID, "watchers"))
+    }
+
+    @discardableResult
+    func watchTask(workspace: String, project: String, taskID: String) async throws -> [FastplayWatcher] {
+        try await postAuthed(taskPath(workspace, project, taskID, "watch"), body: EmptyBody())
+    }
+
+    func unwatchTask(workspace: String, project: String, taskID: String) async throws {
+        let _: FastplayMessageOnly = try await deleteAuthed(taskPath(workspace, project, taskID, "watch"))
+    }
+
+    // MARK: - Activity / users
+
+    func taskActivities(workspace: String, project: String, taskID: String, page: Int = 1) async throws -> [FastplayActivity] {
+        try await getAuthed(
+            taskPath(workspace, project, taskID, "activities"),
+            queryItems: [URLQueryItem(name: "page", value: String(page))]
+        )
+    }
+
+    /// Users sharing a workspace with the caller — powers the assignee picker.
+    func searchUsers(query: String? = nil, workspaceID: String? = nil) async throws -> [FastplayUser] {
+        var items: [URLQueryItem] = []
+        if let query, !query.trimmingCharacters(in: .whitespaces).isEmpty {
+            items.append(URLQueryItem(name: "q", value: query))
+        }
+        if let workspaceID, !workspaceID.isEmpty {
+            items.append(URLQueryItem(name: "workspace_id", value: workspaceID))
+        }
+        return try await getAuthed("/api/search/users", queryItems: items)
+    }
+
     // MARK: - Internals
+
+    private func taskPath(_ workspace: String, _ project: String, _ taskID: String, _ suffix: String) -> String {
+        "/api/workspaces/\(enc(workspace))/projects/\(enc(project))/tasks/\(enc(taskID))/\(suffix)"
+    }
+
+    private struct EmptyBody: Encodable {}
 
     private static func mimeType(for url: URL) -> String {
         let ext = url.pathExtension.lowercased()
@@ -301,6 +458,27 @@ actor FastplayAPIClient {
 
     private func getAuthed<T: Decodable>(_ path: String, queryItems: [URLQueryItem] = []) async throws -> T {
         try await request(path, method: "GET", bodyData: nil, authed: true, queryItems: queryItems)
+    }
+
+    /// GET returning the raw body (file streaming) instead of decoded JSON.
+    private func getAuthedRaw(_ path: String, didRefresh: Bool = false) async throws -> Data {
+        let full = URL(string: path, relativeTo: Self.baseURL)!.absoluteURL
+        var req = URLRequest(url: full)
+        req.httpMethod = "GET"
+        guard let accessToken else { throw FastplayAPIError.notConfigured }
+        req.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        let (data, response) = try await session.data(for: req)
+        guard let http = response as? HTTPURLResponse else {
+            throw FastplayAPIError.message("No HTTP response.")
+        }
+        if http.statusCode == 401, !didRefresh {
+            _ = try await refreshTokens()
+            return try await getAuthedRaw(path, didRefresh: true)
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            throw FastplayAPIError.http(http.statusCode, String(data: data, encoding: .utf8).map { String($0.prefix(200)) } ?? "")
+        }
+        return data
     }
 
     private func postAuthed<T: Decodable, B: Encodable>(_ path: String, body: B) async throws -> T {

@@ -15,6 +15,8 @@ final class BoardStore: ObservableObject {
     @Published var newTaskTitle = ""
     @Published var showNewProjectSheet = false
     @Published var newProjectName = ""
+    /// Workspace labels, loaded lazily for the composer / detail views.
+    @Published var workspaceLabels: [FastplayLabel] = []
 
     var selectedWorkspace: FastplayWorkspace? {
         workspaces.first { $0.id == selectedWorkspaceID }
@@ -187,23 +189,47 @@ final class BoardStore: ObservableObject {
         title: String,
         description: String? = nil,
         columnID: String?,
+        assigneeIDs: [String] = [],
         attachmentURLs: [URL]
+    ) async throws -> FastplayTask {
+        var draft = FastplayTaskDraft()
+        draft.title = title
+        draft.description = description ?? ""
+        draft.columnID = columnID ?? selectedColumnID
+        draft.assigneeIDs = assigneeIDs
+        draft.attachmentURLs = attachmentURLs
+        return try await createTask(draft: draft)
+    }
+
+    /// Full-fidelity creation used by the composer: one POST with every field
+    /// the API accepts, then sequential attachment uploads.
+    @discardableResult
+    func createTask(
+        draft: FastplayTaskDraft,
+        onUploadProgress: ((Int, Int) -> Void)? = nil
     ) async throws -> FastplayTask {
         guard let ws = selectedWorkspace, let project = selectedProject else {
             throw FastplayAPIError.message("Pick a workspace and project first.")
         }
-        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = draft.title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             throw FastplayAPIError.message("Task title can’t be empty.")
         }
+        let description = draft.description.trimmingCharacters(in: .whitespacesAndNewlines)
         let task = try await FastplayAPIClient.shared.createTask(
             workspace: ws.routeKey,
             project: project.routeKey,
             title: trimmed,
-            description: description,
-            columnID: columnID ?? selectedColumnID
+            description: description.isEmpty ? nil : description,
+            columnID: draft.columnID ?? selectedColumnID,
+            priority: draft.priority,
+            startDate: draft.startDate.map(FastplayDates.apiDay),
+            dueDate: draft.dueDate.map(FastplayDates.apiDay),
+            labelIDs: draft.labelIDs.isEmpty ? nil : draft.labelIDs,
+            assigneeIDs: draft.assigneeIDs.isEmpty ? nil : draft.assigneeIDs
         )
-        for url in attachmentURLs {
+        for (index, url) in draft.attachmentURLs.enumerated() {
+            onUploadProgress?(index + 1, draft.attachmentURLs.count)
             _ = try await FastplayAPIClient.shared.uploadTaskAttachment(
                 workspace: ws.routeKey,
                 project: project.routeKey,
@@ -213,6 +239,31 @@ final class BoardStore: ObservableObject {
         }
         await refreshBoard()
         return task
+    }
+
+    func refreshLabels() async {
+        guard let ws = selectedWorkspace else {
+            workspaceLabels = []
+            return
+        }
+        do {
+            workspaceLabels = try await FastplayAPIClient.shared.labels(workspace: ws.routeKey)
+        } catch {
+            // Labels are decorative here — keep whatever we had.
+        }
+    }
+
+    @discardableResult
+    func createLabel(name: String, color: String) async -> FastplayLabel? {
+        guard let ws = selectedWorkspace else { return nil }
+        do {
+            let label = try await FastplayAPIClient.shared.createLabel(workspace: ws.routeKey, name: name, color: color)
+            workspaceLabels.append(label)
+            return label
+        } catch {
+            errorMessage = error.localizedDescription
+            return nil
+        }
     }
 
     func renameTask(_ task: FastplayTask, title: String) async {

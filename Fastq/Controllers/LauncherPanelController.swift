@@ -114,6 +114,9 @@ final class LauncherPanelController: NSObject, ObservableObject {
         removeEscapeMonitor()
         escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard LauncherKeyRouter.shared.isLauncherVisible else { return event }
+            // Only own keys typed in the launcher panel itself — standalone
+            // windows (task composer, settings) handle their own Esc/⌘keys.
+            guard event.window === self?.panel else { return event }
             if event.keyCode == 53 { // Esc
                 DispatchQueue.main.async {
                     self?.handleEscape()

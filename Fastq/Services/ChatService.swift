@@ -22,15 +22,16 @@ enum ChatProvider: String, Codable, CaseIterable, Identifiable {
         switch self {
         case .anthropic:
             return [
+                ("claude-fable-5", "Claude Fable 5"),
                 ("claude-opus-4-8", "Claude Opus 4.8"),
                 ("claude-sonnet-5", "Claude Sonnet 5"),
                 ("claude-haiku-4-5", "Claude Haiku 4.5"),
             ]
         case .openai:
             return [
-                ("gpt-5", "GPT-5"),
-                ("gpt-4o", "GPT-4o"),
-                ("o3", "o3"),
+                ("gpt-5.6-sol", "GPT-5.6 Sol"),
+                ("gpt-5.6-terra", "GPT-5.6 Terra"),
+                ("gpt-5.6-luna", "GPT-5.6 Luna"),
             ]
         }
     }
@@ -38,7 +39,7 @@ enum ChatProvider: String, Codable, CaseIterable, Identifiable {
     var defaultModel: String {
         switch self {
         case .anthropic: return "claude-opus-4-8"
-        case .openai: return "gpt-5"
+        case .openai: return "gpt-5.6-terra"
         }
     }
 
@@ -171,6 +172,10 @@ final class ChatService: ObservableObject {
         }
         stop()
         apply(document: document)
+        // Opening a thread IS activity — without this, any chat older than
+        // the inactivity window is instantly reset to blank by the next
+        // resetIfInactive() (fired on every prompt focus).
+        sessionUpdatedAt = Date()
         historyStore?.setActiveSessionID(id)
         scheduleInactivityTimer()
     }

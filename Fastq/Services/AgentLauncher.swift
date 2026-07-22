@@ -33,6 +33,8 @@ final class AgentLauncher {
         self.sessions = sessions
     }
 
+    /// Starts a headless chat session (no terminal) and mirrors it as an
+    /// `AgentSession` row for the launcher list.
     func launch(
         prompt: String,
         context: AgentLaunchContext,
@@ -40,54 +42,65 @@ final class AgentLauncher {
         model: AgentModelOption,
         attachments: [PromptAttachment]
     ) throws -> AgentSession {
-        let composedPrompt = composePrompt(
-            prompt: prompt,
-            attachments: attachments,
-            context: context
-        )
-        let extraPaths = context.siblings.compactMap(\.path).filter { $0 != context.projectPath }
-        var session = AgentSession(
-            id: UUID(),
+        let cleaned = Self.stripTaskMentionTokens(from: prompt)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let displayText: String
+        if cleaned.isEmpty, let task = context.linkedTasks.first {
+            displayText = "Work on: \(task.title)"
+        } else {
+            displayText = cleaned
+        }
+
+        // Workspace/project/task context ships as a refs.md file the agent
+        // reads, keeping the visible prompt short.
+        let composedPrompt: String
+        if let refsURL = try? Self.writeRefs(context: context) {
+            var parts = [
+                "Read \(refsURL.path) first — it describes the workspace, the project folders, and any linked task(s) with full details."
+            ]
+            var request: [String] = []
+            if cleaned.isEmpty, !context.linkedTasks.isEmpty {
+                request.append(context.linkedTasks.count == 1
+                    ? "Please work on the linked task described in that file."
+                    : "Please work on the linked tasks described in that file.")
+            } else if !cleaned.isEmpty {
+                request.append(cleaned)
+            }
+            request.append(contentsOf: attachments.map { "Attachment: \($0.path)" })
+            if !request.isEmpty {
+                parts.append("## User request\n" + request.joined(separator: "\n\n"))
+            }
+            composedPrompt = parts.joined(separator: "\n\n")
+        } else {
+            composedPrompt = composePrompt(prompt: prompt, attachments: attachments, context: context)
+        }
+
+        AgentChatStore.shared.bind(settings: settings)
+        let chat = try AgentChatStore.shared.startSession(
             tool: tool.kind,
             projectName: context.projectName,
             projectPath: context.projectPath,
-            promptPreview: prompt,
+            model: model,
+            prompt: composedPrompt,
+            displayText: displayText,
+            attachments: attachments.map(\.name)
+        )
+
+        let session = AgentSession(
+            id: chat.id,
+            tool: tool.kind,
+            projectName: context.projectName,
+            projectPath: context.projectPath,
+            promptPreview: displayText,
             model: model,
             startedAt: Date(),
             processIdentifier: nil,
             terminalWindowID: nil,
-            status: .launching
+            status: .running,
+            isChat: true
         )
         sessions.add(session)
-
-        do {
-            let commandLine = terminalCommand(
-                kind: tool.kind,
-                command: tool.commandPath,
-                prompt: composedPrompt,
-                model: model,
-                projectPath: context.projectPath,
-                extraProjectPaths: extraPaths
-            )
-            // Codex boots a cleaner full TUI when the prompt is typed after start.
-            let injectPrompt = tool.kind == .codexCLI
-            let terminal = try sessions.terminals.create(from: CreateSessionRequest(
-                sessionID: session.id,
-                title: session.title,
-                projectName: context.projectName,
-                projectPath: context.projectPath,
-                command: commandLine,
-                prompt: injectPrompt ? composedPrompt : "",
-                tool: tool.kind.rawValue
-            ))
-            session.processIdentifier = terminal.childPID
-            session.status = .running
-            sessions.update(session)
-            return session
-        } catch {
-            sessions.remove(session.id)
-            throw error
-        }
+        return session
     }
 
     func focus(_ session: AgentSession) {
@@ -104,7 +117,58 @@ final class AgentLauncher {
     }
 
     func quit(_ session: AgentSession) {
+        if session.isChat {
+            AgentChatStore.shared.remove(sessionID: session.id)
+        }
         sessions.remove(session.id)
+    }
+
+    // MARK: - refs.md
+
+    /// Writes the launch context to Application Support/Fastq/refs/<id>/refs.md.
+    static func writeRefs(context: AgentLaunchContext) throws -> URL {
+        var lines: [String] = [
+            "# Fastq session context",
+            "",
+            "## Workspace",
+            "Workspace: \(context.workspaceName)",
+            "Active project: \(context.projectName)",
+            "Project folder (your working directory): \(context.projectPath)",
+            "",
+        ]
+        if context.siblings.isEmpty {
+            lines.append("Related projects in this workspace: (none)")
+        } else {
+            lines.append("## Related projects in this workspace")
+            for sibling in context.siblings {
+                lines.append("- \(sibling.name) — \(sibling.path ?? "no local folder linked")")
+            }
+        }
+        if !context.linkedTasks.isEmpty {
+            lines.append("")
+            lines.append("## Linked task\(context.linkedTasks.count == 1 ? "" : "s")")
+            for task in context.linkedTasks {
+                lines.append("")
+                lines.append("### \(task.title)")
+                lines.append("Task ID: \(task.id)")
+                if let column = task.columnName, !column.isEmpty { lines.append("Column: \(column)") }
+                if let status = task.status, !status.isEmpty { lines.append("Status: \(status)") }
+                if let priority = task.priority, !priority.isEmpty { lines.append("Priority: \(priority)") }
+                if let description = task.description?.trimmingCharacters(in: .whitespacesAndNewlines),
+                   !description.isEmpty {
+                    lines.append("")
+                    lines.append("Description:")
+                    lines.append(description)
+                }
+            }
+        }
+
+        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Fastq/refs/\(UUID().uuidString.prefix(8))", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let url = dir.appendingPathComponent("refs.md")
+        try lines.joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
+        return url
     }
 
     // MARK: - Prompt
@@ -185,141 +249,6 @@ final class AgentLauncher {
             .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
     }
 
-    // MARK: - CLI agents (local PTY)
-
-    private func terminalCommand(
-        kind: AgentToolKind,
-        command: String,
-        prompt: String,
-        model: AgentModelOption,
-        projectPath: String,
-        extraProjectPaths: [String]
-    ) -> String {
-        switch kind {
-        case .cursorCLI:
-            return cursorAgentCommand(command: command, prompt: prompt, model: model, projectPath: projectPath)
-        case .claudeCode:
-            return claudeCommand(command: command, prompt: prompt, model: model)
-        case .codexCLI:
-            return codexCommand(
-                command: command,
-                prompt: prompt,
-                model: model,
-                projectPath: projectPath,
-                extraProjectPaths: extraProjectPaths
-            )
-        case .grokAgent:
-            return grokCommand(command: command, prompt: prompt, model: model, projectPath: projectPath)
-        case .openCode:
-            return openCodeCommand(command: command, prompt: prompt, model: model)
-        case .shell:
-            return ""
-        }
-    }
-
-    private func claudeCommand(command: String, prompt: String, model: AgentModelOption) -> String {
-        var parts = [shellEscape(resolvedExecutable(command) ?? command)]
-        if model != .auto {
-            parts += ["--model", shellEscape(model.cliModelFlag(for: .claudeCode))]
-        }
-        appendPromptArgument(to: &parts, prompt: prompt)
-        return parts.joined(separator: " ")
-    }
-
-    private func codexCommand(
-        command: String,
-        prompt: String,
-        model: AgentModelOption,
-        projectPath: String,
-        extraProjectPaths: [String]
-    ) -> String {
-        var parts = [shellEscape(resolvedExecutable(command) ?? command)]
-        parts += ["--cd", shellEscape(projectPath)]
-        if model != .auto {
-            parts += ["--model", shellEscape(model.cliModelFlag(for: .codexCLI))]
-        }
-        for extra in extraProjectPaths where extra != projectPath {
-            parts += ["--add-dir", shellEscape(extra)]
-        }
-        return parts.joined(separator: " ")
-    }
-
-    private func cursorAgentCommand(
-        command: String,
-        prompt: String,
-        model: AgentModelOption,
-        projectPath: String
-    ) -> String {
-        let exe = shellEscape(resolvedExecutable(command) ?? command)
-        var parts = [exe]
-        parts += ["--workspace", shellEscape(projectPath)]
-        if model != .auto {
-            parts += ["--model", shellEscape(model.cliModelFlag(for: .cursorCLI))]
-        }
-        appendPromptArgument(to: &parts, prompt: prompt)
-        return parts.joined(separator: " ")
-    }
-
-    private func grokCommand(
-        command: String,
-        prompt: String,
-        model: AgentModelOption,
-        projectPath: String
-    ) -> String {
-        var parts = [shellEscape(resolvedExecutable(command) ?? command)]
-        parts += ["--cwd", shellEscape(projectPath)]
-        if model != .auto {
-            parts += ["--model", shellEscape(model.cliModelFlag(for: .grokAgent))]
-        }
-        appendPromptArgument(to: &parts, prompt: prompt)
-        return parts.joined(separator: " ")
-    }
-
-    private func openCodeCommand(command: String, prompt: String, model: AgentModelOption) -> String {
-        var parts = [shellEscape(resolvedExecutable(command) ?? command)]
-        if model != .auto {
-            parts += ["--model", shellEscape(model.cliModelFlag(for: .openCode))]
-        }
-        let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !trimmed.isEmpty {
-            parts += ["--prompt", shellEscape(trimmed)]
-        }
-        return parts.joined(separator: " ")
-    }
-
-    private func appendPromptArgument(to parts: inout [String], prompt: String) {
-        let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        parts.append(shellEscape(trimmed))
-    }
-
-    private func resolvedExecutable(_ command: String) -> String? {
-        if command.hasPrefix("/") {
-            return FileManager.default.isExecutableFile(atPath: command) ? command : nil
-        }
-        if let detected = ToolPathDetector.resolve(command) {
-            return detected
-        }
-        let path = ProcessInfo.processInfo.environment["PATH"] ?? "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin"
-        for dir in path.split(separator: ":") {
-            let candidate = "\(dir)/\(command)"
-            if FileManager.default.isExecutableFile(atPath: candidate) {
-                return candidate
-            }
-        }
-        let home = NSHomeDirectory()
-        for dir in ["/opt/homebrew/bin", "/usr/local/bin", "\(home)/.local/bin", "\(home)/.grok/bin", "\(home)/.opencode/bin"] {
-            let candidate = "\(dir)/\(command)"
-            if FileManager.default.isExecutableFile(atPath: candidate) {
-                return candidate
-            }
-        }
-        return nil
-    }
-
-    private func shellEscape(_ value: String) -> String {
-        "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
-    }
 }
 
 enum AgentLaunchError: LocalizedError {

@@ -11,6 +11,9 @@ final class LauncherKeyRouter {
     var isSessionPreviewOpen = false
 
     var closePicker: (() -> Void)?
+    /// When the agent chat preview is open, pasted/dropped files land in the
+    /// chat composer instead of the main prompt.
+    var chatComposerAttach: (([URL]) -> Void)?
     var closeSessionPreview: (() -> Void)?
     var closeMentionPopup: (() -> Void)?
     var onDismissLauncher: (() -> Void)?

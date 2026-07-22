@@ -352,10 +352,15 @@ private struct PersistedSettings: Codable {
         chatProvider = try container.decodeIfPresent(ChatProvider.self, forKey: .chatProvider) ?? .anthropic
         anthropicAPIKey = try container.decodeIfPresent(String.self, forKey: .anthropicAPIKey) ?? ""
         openAIAPIKey = try container.decodeIfPresent(String.self, forKey: .openAIAPIKey) ?? ""
-        anthropicChatModel = try container.decodeIfPresent(String.self, forKey: .anthropicChatModel)
+        let storedAnthropic = try container.decodeIfPresent(String.self, forKey: .anthropicChatModel)
             ?? ChatProvider.anthropic.defaultModel
-        openAIChatModel = try container.decodeIfPresent(String.self, forKey: .openAIChatModel)
+        let storedOpenAI = try container.decodeIfPresent(String.self, forKey: .openAIChatModel)
             ?? ChatProvider.openai.defaultModel
+        // Retired model ids (gpt-4o, o3, …) fall back to the current default.
+        anthropicChatModel = ChatProvider.anthropic.models.contains { $0.id == storedAnthropic }
+            ? storedAnthropic : ChatProvider.anthropic.defaultModel
+        openAIChatModel = ChatProvider.openai.models.contains { $0.id == storedOpenAI }
+            ? storedOpenAI : ChatProvider.openai.defaultModel
     }
 }
 

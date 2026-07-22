@@ -3,12 +3,19 @@ import AppKit
 
 /// Chat-mode content area: scrolling message thread with streaming replies,
 /// rich markdown / code / KaTeX math, attachment previews, and chat history.
+///
+/// Layout follows modern AI chat apps: user turns sit right-aligned in quiet
+/// bubbles, assistant turns are full-width text blocks inside a centered
+/// reading column, and streaming auto-scroll yields to the user scrolling up.
 struct ChatModeView: View {
     @ObservedObject var chat: ChatService
     @ObservedObject var history: ChatHistoryStore
     var providerName: String
     var modelName: String
     var onNewChat: () -> Void
+
+    /// Comfortable reading measure for the transcript column.
+    private static let readingWidth: CGFloat = 760
 
     @State private var showHistory = false
     /// When false, streaming updates won't yank the scroll position — user is reading above.
@@ -46,21 +53,22 @@ struct ChatModeView: View {
             Spacer(minLength: 0)
             Image(systemName: "bubble.left.and.bubble.right")
                 .font(.system(size: 28, weight: .light))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(FQTheme.textSecondary)
             Text("Chat with \(modelName)")
                 .font(.headline)
+                .foregroundStyle(FQTheme.textPrimary)
             Text("Ask anything — attach images, PDFs, or files with ⌘V or the paperclip. Math and code render richly in replies.")
                 .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(FQTheme.textSecondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 420)
             Text("Try: “solve ∫₀¹ x² dx” or paste a screenshot")
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(FQTheme.textSecondary)
                 .padding(.top, 2)
             Text("History keeps past threads · idle chats reset after 1 hour · New starts a blank chat")
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(FQTheme.textTertiary)
                 .padding(.top, 4)
             Spacer(minLength: 0)
         }
@@ -74,14 +82,17 @@ struct ChatModeView: View {
 
             ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 12) {
+                    LazyVStack(alignment: .leading, spacing: 18) {
                         ForEach(chat.messages) { message in
-                            ChatBubble(message: message, isStreaming: isStreamingMessage(message))
+                            ChatMessageRow(message: message, isStreaming: isStreamingMessage(message))
                                 .id(message.id)
                         }
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 14)
+                    .padding(.horizontal, 20)
+                    .padding(.top, 6)
+                    .padding(.bottom, 18)
+                    .frame(maxWidth: Self.readingWidth)
+                    .frame(maxWidth: .infinity)
                     .background(
                         ChatScrollFollowMonitor(pinToBottom: $pinToBottom)
                             .frame(width: 0, height: 0)
@@ -105,10 +116,10 @@ struct ChatModeView: View {
                         } label: {
                             Image(systemName: "arrow.down")
                                 .font(.system(size: 11, weight: .bold))
-                                .foregroundStyle(.primary)
+                                .foregroundStyle(FQTheme.textPrimary)
                                 .frame(width: 28, height: 28)
                                 .background(.ultraThinMaterial, in: Circle())
-                                .overlay(Circle().strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
+                                .overlay(Circle().strokeBorder(FQTheme.border, lineWidth: 1))
                         }
                         .buttonStyle(.plain)
                         .padding(.trailing, 14)
@@ -147,14 +158,14 @@ struct ChatModeView: View {
         HStack(spacing: 10) {
             Text("\(providerName) · \(modelName)")
                 .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(FQTheme.textSecondary)
                 .textCase(.uppercase)
             Spacer()
             if chat.isStreaming {
                 Button("Stop") { chat.stop() }
                     .buttonStyle(.plain)
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Color.accentColor)
+                    .foregroundStyle(FQTheme.accent)
             }
             Button {
                 showHistory.toggle()
@@ -164,13 +175,13 @@ struct ChatModeView: View {
             }
             .buttonStyle(.plain)
             .font(.system(size: 11, weight: .medium))
-            .foregroundStyle(showHistory ? Color.accentColor : .secondary)
+            .foregroundStyle(showHistory ? FQTheme.accent : FQTheme.textSecondary)
             .help("Open previous chats")
 
             Button("New") { onNewChat() }
                 .buttonStyle(.plain)
                 .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(FQTheme.textSecondary)
                 .help("New chat")
         }
         .padding(.horizontal, 18)
@@ -183,13 +194,14 @@ struct ChatModeView: View {
             HStack {
                 Text("Previous chats")
                     .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(FQTheme.textPrimary)
                 Spacer()
                 Button {
                     showHistory = false
                 } label: {
                     Image(systemName: "xmark")
                         .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(FQTheme.textSecondary)
                 }
                 .buttonStyle(.plain)
             }
@@ -201,7 +213,7 @@ struct ChatModeView: View {
             if history.sessions.isEmpty {
                 Text("No saved chats yet.")
                     .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(FQTheme.textSecondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(14)
             } else {
@@ -219,13 +231,13 @@ struct ChatModeView: View {
         }
         .frame(width: 320)
         .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color(nsColor: .windowBackgroundColor).opacity(0.96))
-                .shadow(color: .black.opacity(0.35), radius: 18, y: 8)
+            RoundedRectangle(cornerRadius: FQTheme.radiusMedium, style: .continuous)
+                .fill(FQTheme.surface)
+                .shadow(color: .black.opacity(0.25), radius: 18, y: 8)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
+            RoundedRectangle(cornerRadius: FQTheme.radiusMedium, style: .continuous)
+                .strokeBorder(FQTheme.border, lineWidth: 1)
         )
     }
 
@@ -239,28 +251,28 @@ struct ChatModeView: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(session.title)
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(FQTheme.textPrimary)
                         .lineLimit(1)
                     Text(session.preview.isEmpty ? "\(session.messageCount) messages" : session.preview)
                         .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(FQTheme.textSecondary)
                         .lineLimit(2)
                     Text(Self.relativeDate(session.updatedAt))
                         .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(FQTheme.textTertiary)
                 }
                 Spacer(minLength: 0)
                 if isCurrent {
                     Text("Open")
                         .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Color.accentColor)
+                        .foregroundStyle(FQTheme.accent)
                 }
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
             .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(isCurrent ? Color.accentColor.opacity(0.12) : Color.clear)
+                RoundedRectangle(cornerRadius: FQTheme.radiusSmall, style: .continuous)
+                    .fill(isCurrent ? FQTheme.surfaceSecondary : Color.clear)
             )
             .contentShape(Rectangle())
         }
@@ -287,48 +299,80 @@ struct ChatModeView: View {
     }
 }
 
-private struct ChatBubble: View {
+// MARK: - Message rows
+
+/// One transcript turn. User turns render as a right-aligned bubble of plain
+/// selectable text; assistant turns render full-width via the rich webview.
+private struct ChatMessageRow: View {
     let message: ChatMessage
     let isStreaming: Bool
 
     var body: some View {
-        HStack(alignment: .top, spacing: 0) {
-            if message.role == .user { Spacer(minLength: 48) }
+        switch message.role {
+        case .user: userRow
+        case .assistant: assistantRow
+        }
+    }
 
-            VStack(alignment: .leading, spacing: 8) {
+    private var userRow: some View {
+        HStack(alignment: .top, spacing: 0) {
+            Spacer(minLength: 56)
+            VStack(alignment: .trailing, spacing: 8) {
                 if !message.attachments.isEmpty {
                     ChatAttachmentStrip(attachments: message.attachments)
                 }
-
-                if message.text.isEmpty && isStreaming {
-                    HStack(spacing: 6) {
-                        ProgressView().controlSize(.mini)
-                        Text("Thinking…")
-                            .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
-                    }
-                } else if !message.text.isEmpty || isStreaming {
-                    ChatRichContentView(
-                        text: message.text,
-                        isStreaming: isStreaming,
-                        isError: message.isError
-                    )
+                if !message.text.isEmpty {
+                    Text(message.text)
+                        .font(.system(size: 13))
+                        .lineSpacing(3)
+                        .foregroundStyle(FQTheme.textPrimary)
+                        .textSelection(.enabled)
+                        .multilineTextAlignment(.leading)
                 }
             }
             .padding(.horizontal, 14)
-            .padding(.vertical, 11)
-            .frame(maxWidth: message.role == .assistant ? .infinity : 520, alignment: .leading)
+            .padding(.vertical, 9)
             .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(message.role == .user
-                          ? Color.accentColor.opacity(0.18)
-                          : Color.white.opacity(0.06))
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(FQTheme.surfaceSecondary)
             )
-
-            if message.role == .assistant { Spacer(minLength: 24) }
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(FQTheme.border.opacity(0.6), lineWidth: 1)
+            )
+            .frame(maxWidth: 480, alignment: .trailing)
         }
+        .frame(maxWidth: .infinity, alignment: .trailing)
+    }
+
+    private var assistantRow: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if !message.attachments.isEmpty {
+                ChatAttachmentStrip(attachments: message.attachments)
+            }
+
+            if message.text.isEmpty && isStreaming {
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.mini)
+                    Text("Thinking…")
+                        .font(.system(size: 12))
+                        .foregroundStyle(FQTheme.textSecondary)
+                }
+                .padding(.vertical, 2)
+            } else if !message.text.isEmpty || isStreaming {
+                ChatRichContentView(
+                    text: message.text,
+                    isStreaming: isStreaming,
+                    isError: message.isError
+                )
+            }
+        }
+        .padding(.vertical, 2)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
+
+// MARK: - Attachments
 
 private struct ChatAttachmentStrip: View {
     let attachments: [PromptAttachment]
@@ -356,25 +400,26 @@ private struct ChatAttachmentChip: View {
             } else {
                 Image(systemName: attachment.isImage ? "photo" : docSymbol)
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(FQTheme.textSecondary)
                     .frame(width: 28, height: 28)
-                    .background(RoundedRectangle(cornerRadius: 5).fill(Color.white.opacity(0.08)))
+                    .background(RoundedRectangle(cornerRadius: 5).fill(FQTheme.surfaceHover))
             }
             VStack(alignment: .leading, spacing: 1) {
                 Text(attachment.name)
                     .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(FQTheme.textPrimary)
                     .lineLimit(1)
                 Text(attachment.isImage ? "Image" : (attachment.path as NSString).pathExtension.uppercased())
                     .font(.system(size: 9, weight: .medium))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(FQTheme.textSecondary)
             }
         }
         .padding(.trailing, 8)
         .padding(.vertical, 3)
         .padding(.leading, 3)
         .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color.white.opacity(0.08))
+            RoundedRectangle(cornerRadius: FQTheme.radiusSmall, style: .continuous)
+                .fill(FQTheme.surfaceHover.opacity(0.6))
         )
         .help(attachment.path)
         .onTapGesture {
@@ -406,6 +451,8 @@ private struct FlowishHStack<Content: View>: View {
         }
     }
 }
+
+// MARK: - Scroll follow
 
 /// Watches the enclosing `NSScrollView` so streaming auto-scroll only runs
 /// while the user is near the bottom. Manual scroll-up clears the pin.
@@ -537,4 +584,3 @@ private struct ChatScrollFollowMonitor: NSViewRepresentable {
         }
     }
 }
-

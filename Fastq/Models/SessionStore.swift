@@ -70,10 +70,28 @@ final class SessionStore: ObservableObject {
     }
 
     private func pruneDeadSessions() {
-        let liveIDs = Set(terminals.sessions.map(\.id))
-        sessions.removeAll { !liveIDs.contains($0.id) }
+        let liveTerminalIDs = Set(terminals.sessions.map(\.id))
+        let liveChatIDs = Set(AgentChatStore.shared.sessions.map(\.id))
+        sessions.removeAll { session in
+            session.isChat ? !liveChatIDs.contains(session.id) : !liveTerminalIDs.contains(session.id)
+        }
 
         for index in sessions.indices {
+            if sessions[index].isChat {
+                guard let chat = AgentChatStore.shared.session(id: sessions[index].id) else { continue }
+                switch chat.phase {
+                case .running:
+                    sessions[index].status = .running
+                    sessions[index].activity = .working
+                case .waitingForUser:
+                    sessions[index].status = .running
+                    sessions[index].activity = .waiting
+                case .done, .failed, .idle:
+                    sessions[index].status = .running
+                    sessions[index].activity = .done
+                }
+                continue
+            }
             guard let term = terminal(id: sessions[index].id) else { continue }
             sessions[index].processIdentifier = term.childPID
             sessions[index].status = term.isRunning ? .running : .exited

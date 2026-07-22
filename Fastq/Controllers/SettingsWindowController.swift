@@ -27,6 +27,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         if let window {
             // Rebuild content so the preferred tab applies.
             window.contentViewController = makeHostingController()
+            window.center()
             NSApp.activate(ignoringOtherApps: true)
             window.makeKeyAndOrderFront(nil)
             return
@@ -42,8 +43,9 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         window.contentViewController = makeHostingController()
         window.delegate = self
         window.isReleasedWhenClosed = false
+        // Always open centered — no frame autosave, which would restore
+        // wherever the window was last dragged (e.g. down by the Dock).
         window.center()
-        window.setFrameAutosaveName("FastqSettings")
         window.level = .floating
         window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
 

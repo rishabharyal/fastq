@@ -1,9 +1,53 @@
 import SwiftUI
 import AppKit
 
+/// Custom entry point: when the Claude CLI spawns this binary as its MCP
+/// permission-prompt server (`Fastq --fastq-approve <port> <token>`), run
+/// the stdio server instead of booting the app.
 @main
+enum FastqMain {
+    static func main() {
+        let args = CommandLine.arguments
+        if let index = args.firstIndex(of: "--fastq-approve"),
+           args.count > index + 2,
+           let port = UInt16(args[index + 1]) {
+            FastqApproveServer.run(port: port, token: args[index + 2])
+        }
+        FastqApp.main()
+    }
+}
+
+/// Tasks assigned to the signed-in user — feeds the menu-bar section and
+/// the Projects-mode "Mine" filter. Refreshes on a slow timer + on demand.
+@MainActor
+final class AssignedTasksStore: ObservableObject {
+    static let shared = AssignedTasksStore()
+
+    @Published private(set) var tasks: [FastplayTask] = []
+    private var lastFetch: Date?
+
+    func refreshIfStale() {
+        if let lastFetch, Date().timeIntervalSince(lastFetch) < 120 { return }
+        refresh()
+    }
+
+    func refresh() {
+        guard FastplayAuthStore.shared.isLoggedIn,
+              let me = FastplayAuthStore.shared.user?.id else {
+            tasks = []
+            return
+        }
+        lastFetch = Date()
+        Task {
+            let mine = (try? await FastplayAPIClient.shared.listTasks(assigneeID: me, perPage: 50)) ?? []
+            self.tasks = mine.filter { !$0.isCompleted }
+        }
+    }
+}
+
 struct FastqApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+    @ObservedObject private var assigned = AssignedTasksStore.shared
 
     var body: some Scene {
         // No SwiftUI `Settings` scene — accessory apps can't reliably reopen it.
@@ -16,6 +60,23 @@ struct FastqApp: App {
                 appDelegate.openBoards()
             }
             .keyboardShortcut("b", modifiers: .command)
+
+            if appDelegate.auth.isLoggedIn {
+                Divider()
+
+                Text("Assigned Tasks — \(assigned.tasks.count) open")
+
+                ForEach(assigned.tasks.prefix(6)) { task in
+                    Button("• \(task.title)") {
+                        appDelegate.openBoards()
+                    }
+                }
+                if assigned.tasks.count > 6 {
+                    Button("…and \(assigned.tasks.count - 6) more") {
+                        appDelegate.openBoards()
+                    }
+                }
+            }
 
             if appDelegate.settings.needsSetup {
                 Button("Continue Setup…") {
@@ -78,7 +139,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
-        Task { await auth.restoreSession() }
+        Task {
+            await auth.restoreSession()
+            AssignedTasksStore.shared.refresh()
+        }
+
+        // Keep the menu's assigned-task list fresh in the background.
+        Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { _ in
+            Task { @MainActor in
+                AssignedTasksStore.shared.refreshIfStale()
+            }
+        }
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
             self?.presentOnboardingIfNeeded()

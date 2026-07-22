@@ -45,9 +45,11 @@ enum AgentToolKind: String, Codable, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    /// Coding agents shown in the launcher tool picker (excludes plain shell).
+    /// Coding agents shown in the launcher tool picker. Headless mode
+    /// currently supports Claude Code and Cursor only (other cases remain
+    /// for decoding old persisted settings).
     static var agentCases: [AgentToolKind] {
-        allCases.filter { $0 != .shell }
+        [.claudeCode, .cursorCLI]
     }
 
     var displayName: String {
@@ -209,45 +211,49 @@ struct PromptAttachment: Identifiable, Hashable, Codable {
     }
 }
 
+/// Model choices for the headless agent CLIs. Values are the CLIs' stable
+/// aliases (both `claude --model` and `cursor-agent --model` accept them);
+/// aliases track the latest model in each family so this list doesn't rot.
 enum AgentModelOption: String, CaseIterable, Identifiable, Codable {
     case auto
-    case sonnet
+    case fable
     case opus
-    case gpt4o
-    case gpt5
-    case o3
+    case sonnet
+    case haiku
+    /// Cursor's in-house fast agent model.
+    case composer
 
     var id: String { rawValue }
+
+    init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        // Legacy persisted values (gpt4o / gpt5 / o3 …) fall back to auto.
+        self = AgentModelOption(rawValue: raw) ?? .auto
+    }
 
     var displayName: String {
         switch self {
         case .auto: return "Auto"
-        case .sonnet: return "Claude Sonnet"
+        case .fable: return "Claude Fable"
         case .opus: return "Claude Opus"
-        case .gpt4o: return "GPT-4o"
-        case .gpt5: return "GPT-5"
-        case .o3: return "o3"
+        case .sonnet: return "Claude Sonnet"
+        case .haiku: return "Claude Haiku"
+        case .composer: return "Composer"
         }
     }
 
-    /// Best-effort model id for each CLI's `--model` flag.
-    func cliModelFlag(for tool: AgentToolKind) -> String {
-        switch (self, tool) {
-        case (.auto, _):
-            return "auto"
-        case (.sonnet, .claudeCode), (.sonnet, .cursorCLI):
-            return "sonnet"
-        case (.opus, .claudeCode), (.opus, .cursorCLI):
-            return "opus"
-        case (.gpt4o, .codexCLI), (.gpt4o, .cursorCLI):
-            return "gpt-4o"
-        case (.gpt5, .codexCLI), (.gpt5, .cursorCLI):
-            return "gpt-5"
-        case (.o3, .codexCLI), (.o3, .cursorCLI):
-            return "o3"
-        default:
-            return rawValue
+    /// The models each tool actually accepts.
+    static func options(for tool: AgentToolKind) -> [AgentModelOption] {
+        switch tool {
+        case .claudeCode: return [.auto, .fable, .opus, .sonnet, .haiku]
+        case .cursorCLI: return [.auto, .composer, .opus, .sonnet]
+        default: return [.auto]
         }
+    }
+
+    /// Alias passed to `--model` (omitted entirely for `.auto`).
+    func cliModelFlag(for tool: AgentToolKind) -> String {
+        rawValue
     }
 }
 
@@ -264,6 +270,8 @@ struct AgentSession: Identifiable, Hashable {
     var status: SessionStatus
     /// Claude (and any AI CLI) turn state from Terminal activity bridge.
     var activity: AgentActivity = .idle
+    /// Headless chat session (AgentChatStore) instead of a PTY.
+    var isChat = false
 
     enum SessionStatus: String, Hashable {
         case launching

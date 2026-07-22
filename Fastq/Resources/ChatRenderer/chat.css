@@ -1,0 +1,275 @@
+/* Chat message renderer — quiet, neutral, FQTheme-aligned.
+   Light/dark follows the WKWebView's effectiveAppearance via
+   prefers-color-scheme; the page background stays transparent so the
+   SwiftUI surface shows through. */
+
+:root {
+  color-scheme: light dark;
+
+  --fg: #1f1f1f;                      /* FQTheme.textPrimary (light) */
+  --fg-secondary: #737373;            /* FQTheme.textSecondary */
+  --fg-tertiary: #9e9e9e;
+  --border: rgba(0, 0, 0, 0.09);      /* FQTheme.border */
+  --rule: rgba(0, 0, 0, 0.10);
+  --inline-code-bg: rgba(0, 0, 0, 0.055);
+  --code-bg: #f5f5f5;                 /* FQTheme.codeBackground */
+  --code-head-bg: #ececec;
+  --quote-border: rgba(0, 0, 0, 0.16);
+  --table-head-bg: rgba(0, 0, 0, 0.035);
+  --table-row-alt: rgba(0, 0, 0, 0.018);
+  --link: #3d6fa8;
+  --error: #c93c3c;                   /* FQTheme.danger (light) */
+  --caret: rgba(0, 0, 0, 0.6);
+
+  /* highlight.js tokens — muted GitHub-ish light */
+  --hl-comment: #6e7781;
+  --hl-keyword: #a44185;
+  --hl-string: #16713c;
+  --hl-number: #7141c0;
+  --hl-title: #2f5fb3;
+  --hl-attr: #8a5a12;
+  --hl-builtin: #953800;
+  --hl-meta: #116329;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fg: #f0f0f0;                    /* FQTheme.textPrimary (dark) */
+    --fg-secondary: #9e9e9e;
+    --fg-tertiary: #737373;
+    --border: rgba(255, 255, 255, 0.12);
+    --rule: rgba(255, 255, 255, 0.11);
+    --inline-code-bg: rgba(255, 255, 255, 0.085);
+    --code-bg: #212121;               /* FQTheme.codeBackground (dark) */
+    --code-head-bg: #2a2a2a;
+    --quote-border: rgba(255, 255, 255, 0.22);
+    --table-head-bg: rgba(255, 255, 255, 0.05);
+    --table-row-alt: rgba(255, 255, 255, 0.025);
+    --link: #8db8e8;
+    --error: #f26b6b;                 /* FQTheme.danger (dark) */
+    --caret: rgba(255, 255, 255, 0.7);
+
+    /* muted GitHub-dark-ish */
+    --hl-comment: #8b949e;
+    --hl-keyword: #e08cc3;
+    --hl-string: #7ec699;
+    --hl-number: #c3a6f2;
+    --hl-title: #79b8ff;
+    --hl-attr: #e3b16f;
+    --hl-builtin: #ffa657;
+    --hl-meta: #7ee787;
+  }
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  overflow: hidden;
+  color: var(--fg);
+  font: 13.5px/1.62 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+#out {
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+#out.error-tone { color: var(--error); }
+
+/* ---- Prose ------------------------------------------------------------ */
+
+#out > :first-child { margin-top: 0 !important; }
+#out > :last-child { margin-bottom: 0 !important; }
+
+#out p { margin: 0.6em 0; }
+
+#out h1, #out h2, #out h3, #out h4, #out h5, #out h6 {
+  margin: 1.15em 0 0.45em;
+  font-weight: 650;
+  line-height: 1.3;
+  color: var(--fg);
+  letter-spacing: -0.01em;
+}
+#out h1 { font-size: 1.45em; }
+#out h2 { font-size: 1.28em; }
+#out h3 { font-size: 1.12em; }
+#out h4 { font-size: 1.02em; }
+#out h5, #out h6 { font-size: 1em; }
+
+#out a {
+  color: var(--link);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+}
+#out a:hover { border-bottom-color: currentColor; }
+
+#out strong { font-weight: 640; }
+
+#out hr {
+  border: none;
+  border-top: 1px solid var(--rule);
+  margin: 1.2em 0;
+}
+
+/* Lists — nested-friendly */
+#out ul, #out ol {
+  margin: 0.55em 0;
+  padding-left: 1.5em;
+}
+#out li { margin: 0.28em 0; }
+#out li > ul, #out li > ol { margin: 0.28em 0; }
+#out ul { list-style: disc; }
+#out ul ul { list-style: circle; }
+#out ul ul ul { list-style: square; }
+
+/* GFM task lists */
+#out li:has(> input[type="checkbox"]) { list-style: none; }
+#out li > input[type="checkbox"] {
+  margin: 0 0.45em 0 -1.35em;
+  vertical-align: -0.12em;
+  accent-color: var(--fg-secondary);
+  pointer-events: none;
+}
+
+/* Blockquote */
+#out blockquote {
+  margin: 0.7em 0;
+  padding: 0.1em 0 0.1em 0.95em;
+  border-left: 3px solid var(--quote-border);
+  color: var(--fg-secondary);
+}
+#out blockquote > :first-child { margin-top: 0; }
+#out blockquote > :last-child { margin-bottom: 0; }
+
+/* Inline code */
+#out code {
+  font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
+  font-size: 0.92em;
+  background: var(--inline-code-bg);
+  padding: 0.12em 0.38em;
+  border-radius: 5px;
+}
+
+/* ---- Tables ------------------------------------------------------------ */
+
+#out .table-wrap {
+  margin: 0.8em 0;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+#out table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.96em;
+}
+#out th, #out td {
+  padding: 0.45em 0.8em;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+#out th {
+  background: var(--table-head-bg);
+  font-weight: 620;
+  white-space: nowrap;
+}
+#out tr:last-child td { border-bottom: none; }
+#out tbody tr:nth-child(even) { background: var(--table-row-alt); }
+
+/* ---- Code blocks ------------------------------------------------------- */
+
+#out .codeblock {
+  margin: 0.8em 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--code-bg);
+}
+#out .codeblock-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 10px 5px 12px;
+  background: var(--code-head-bg);
+  border-bottom: 1px solid var(--border);
+}
+#out .codeblock-lang {
+  font: 600 10.5px/1 ui-monospace, "SF Mono", Menlo, monospace;
+  color: var(--fg-secondary);
+  text-transform: lowercase;
+  letter-spacing: 0.02em;
+}
+#out .copy-btn {
+  appearance: none;
+  border: none;
+  background: transparent;
+  font: 600 10.5px/1 -apple-system, BlinkMacSystemFont, sans-serif;
+  color: var(--fg-secondary);
+  padding: 4px 6px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+#out .copy-btn:hover { color: var(--fg); background: var(--inline-code-bg); }
+#out .copy-btn.done { color: var(--fg); }
+#out .codeblock pre {
+  margin: 0;
+  padding: 10px 12px;
+  overflow-x: auto;
+}
+#out .codeblock pre code {
+  display: block;
+  background: none;
+  padding: 0;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--fg);
+}
+
+/* highlight.js — variable-driven, both appearances */
+.hljs-comment, .hljs-quote { color: var(--hl-comment); font-style: italic; }
+.hljs-keyword, .hljs-selector-tag, .hljs-literal, .hljs-type { color: var(--hl-keyword); }
+.hljs-string, .hljs-regexp, .hljs-addition { color: var(--hl-string); }
+.hljs-number, .hljs-symbol, .hljs-bullet, .hljs-link { color: var(--hl-number); }
+.hljs-title, .hljs-title.class_, .hljs-title.function_, .hljs-section { color: var(--hl-title); }
+.hljs-attr, .hljs-attribute, .hljs-variable, .hljs-template-variable, .hljs-selector-attr { color: var(--hl-attr); }
+.hljs-built_in, .hljs-name, .hljs-selector-id, .hljs-selector-class, .hljs-tag { color: var(--hl-builtin); }
+.hljs-meta, .hljs-doctag, .hljs-deletion { color: var(--hl-meta); }
+.hljs-emphasis { font-style: italic; }
+.hljs-strong { font-weight: 600; }
+
+/* ---- Math -------------------------------------------------------------- */
+
+#out .katex { font-size: 1.08em; }
+#out .math-display {
+  display: block;
+  margin: 0.85em 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.2em 0.1em;
+}
+#out .math-display .katex-display { margin: 0; }
+#out .math-error {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 12px;
+  color: var(--error);
+}
+
+/* ---- Streaming caret --------------------------------------------------- */
+
+#caret {
+  width: 7px;
+  height: 15px;
+  margin-top: 3px;
+  border-radius: 2px;
+  background: var(--caret);
+  animation: caret-blink 1s steps(2, start) infinite;
+}
+#caret[hidden] { display: none; }
+
+@keyframes caret-blink {
+  50% { opacity: 0.15; }
+}

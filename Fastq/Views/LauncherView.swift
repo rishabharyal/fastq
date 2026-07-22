@@ -30,6 +30,7 @@ struct LauncherView: View {
     @StateObject private var chatHistory = ChatHistoryStore()
     @StateObject private var board = BoardStore()
     @ObservedObject private var folders = ProjectFolderStore.shared
+    @ObservedObject private var chatStore = AgentChatStore.shared
     /// ⌘1 chat / ⌘2 agent / ⌘N board; restored from settings and persisted on change.
     @State private var mode: LauncherMode = .agent
     /// Keep ChatModeView (and its WKWebViews) mounted after first visit so agent↔chat is instant.
@@ -37,6 +38,9 @@ struct LauncherView: View {
     @State private var activeMention: ActiveMention?
     @State private var mentionResults: [FileMentionItem] = []
     @State private var taskMentionResults: [TaskMentionItem] = []
+    /// Projects mode: `@` suggests workspace members (assignees), not files.
+    @State private var userMentionResults: [FastplayUser] = []
+    @State private var userSearchGeneration = 0
     @State private var taskMentionCache: [String: AgentLinkedTask] = [:]
     @State private var taskSearchGeneration = 0
     @State private var isSearchingTasks = false
@@ -220,15 +224,24 @@ struct LauncherView: View {
         ZStack {
             // Keep Ghostty surfaces mounted for the life of each PTY so leaving
             // the preview (chat mode, Back, etc.) does not wipe scrollback.
+            // (Shell sessions only — agent sessions are headless chats now.)
             if !sessions.terminals.sessions.isEmpty {
                 persistentTerminalLayer
-                    .opacity(isSessionPreviewOpen ? 1 : 0)
-                    .allowsHitTesting(isSessionPreviewOpen)
-                    .accessibilityHidden(!isSessionPreviewOpen)
+                    .opacity(isSessionPreviewOpen && !isPreviewingChat ? 1 : 0)
+                    .allowsHitTesting(isSessionPreviewOpen && !isPreviewingChat)
+                    .accessibilityHidden(!(isSessionPreviewOpen && !isPreviewingChat))
             }
 
             if isSessionPreviewOpen, let session = previewedSession {
-                fullTerminalChrome(session)
+                if session.isChat, let chat = chatStore.session(id: session.id) {
+                    AgentChatView(
+                        session: chat,
+                        store: chatStore,
+                        onClose: closeSessionPreview
+                    )
+                } else {
+                    fullTerminalChrome(session)
+                }
             } else {
                 VStack(spacing: 0) {
                     header
@@ -264,7 +277,7 @@ struct LauncherView: View {
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
+                .strokeBorder(FQTheme.border, lineWidth: 1)
         )
         .overlay(alignment: .topLeading) {
             if mentionVisible {
@@ -471,7 +484,7 @@ struct LauncherView: View {
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 3)
-                .background(Capsule().fill(Color.white.opacity(0.08)))
+                .background(Capsule().fill(Color.primary.opacity(0.07)))
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
@@ -524,6 +537,9 @@ struct LauncherView: View {
 
                 // Attach + mic + submit sit together as one cluster.
                 HStack(spacing: 2) {
+                    if mode == .board {
+                        newTaskModalButton
+                    }
                     attachButton
                     voiceButton
                     submitButton
@@ -566,6 +582,8 @@ struct LauncherView: View {
                     modelMenu
                         .controlFocusRing(focusedControl == .model)
                         .accessibilityLabel("Model: \(selectedModel.displayName)")
+                    permissionPresetMenu
+                        .accessibilityLabel("Permissions: \(chatStore.permissionPreset.displayName)")
                 case .board:
                     workspaceChip
                         .controlFocusRing(focusedControl == .workspace)
@@ -602,6 +620,22 @@ struct LauncherView: View {
         .padding(.top, 16)
         .padding(.bottom, 7)
         .animation(.easeOut(duration: 0.15), value: isLaunching)
+    }
+
+    /// Opens the full create-task form (description, priority, dates, labels,
+    /// assignees, attachments) instead of the quick title-only path.
+    private var newTaskModalButton: some View {
+        Button(action: openTaskComposer) {
+            Image(systemName: "square.and.pencil")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(auth.isLoggedIn && board.selectedProject != nil ? Color.accentColor : Color.secondary)
+                .frame(minWidth: 22, minHeight: 22)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!auth.isLoggedIn || board.selectedProject == nil)
+        .help("New task with details — description, priority, labels, attachments")
+        .accessibilityLabel("New task with details")
     }
 
     private var attachButton: some View {
@@ -682,7 +716,8 @@ struct LauncherView: View {
     private var activeMentionListCount: Int {
         switch activeMention {
         case .task: return taskMentionResults.count
-        case .file, .none: return mentionResults.count
+        case .file: return mode == .board ? userMentionResults.count : mentionResults.count
+        case .none: return mentionResults.count
         }
     }
 
@@ -712,11 +747,15 @@ struct LauncherView: View {
 
     private var modelMenu: some View {
         Menu {
-            ForEach(AgentModelOption.allCases) { model in
+            ForEach(AgentModelOption.options(for: selectedTool?.kind ?? .claudeCode)) { model in
                 Button {
                     selectedModel = model
                 } label: {
-                    Text(model.displayName)
+                    if model == selectedModel {
+                        Label(model.displayName, systemImage: "checkmark")
+                    } else {
+                        Text(model.displayName)
+                    }
                 }
             }
         } label: {
@@ -724,6 +763,32 @@ struct LauncherView: View {
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
+    }
+
+    /// How much the headless agent may do without asking (per-run flags).
+    private var permissionPresetMenu: some View {
+        Menu {
+            ForEach(AgentPermissionPreset.allCases) { preset in
+                Button {
+                    chatStore.permissionPreset = preset
+                } label: {
+                    if preset == chatStore.permissionPreset {
+                        Label(preset.displayName, systemImage: "checkmark")
+                    } else {
+                        Text(preset.displayName)
+                    }
+                }
+                .help(preset.detail)
+            }
+        } label: {
+            ChipLabel(
+                systemIcon: chatStore.permissionPreset.systemImage,
+                title: chatStore.permissionPreset.displayName
+            )
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .help("Agent permissions — what runs without asking")
     }
 
     private var workspaceChip: some View {
@@ -831,7 +896,7 @@ struct LauncherView: View {
                 Text(activeMention.flatMap { mention in
                     switch mention {
                     case .task: return "Tasks"
-                    case .file: return "Files"
+                    case .file: return mode == .board ? "People" : "Files"
                     }
                 } ?? "Mentions")
                     .font(.system(size: 11, weight: .semibold))
@@ -895,13 +960,52 @@ struct LauncherView: View {
                                 .padding(.vertical, 7)
                                 .background(
                                     RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                        .fill(index == mentionSelection ? Color.white.opacity(0.12) : Color.clear)
+                                        .fill(index == mentionSelection ? Color.primary.opacity(0.09) : Color.clear)
                                 )
                             }
                             .buttonStyle(.plain)
                         }
                         if taskMentionResults.isEmpty {
                             Text(taskMentionEmptyLabel)
+                                .font(.system(size: 12))
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 10)
+                        }
+                    } else if mode == .board {
+                        ForEach(Array(userMentionResults.prefix(12).enumerated()), id: \.element.id) { index, user in
+                            Button {
+                                mentionSelection = index
+                                confirmMention()
+                            } label: {
+                                HStack(spacing: 10) {
+                                    AvatarBubble(name: user.name.isEmpty ? user.email : user.name, size: 20)
+                                    VStack(alignment: .leading, spacing: 1) {
+                                        Text(user.name.isEmpty ? user.email : user.name)
+                                            .font(.system(size: 13, weight: .medium))
+                                            .lineLimit(1)
+                                            .foregroundStyle(.primary)
+                                        Text(user.email)
+                                            .font(.system(size: 11))
+                                            .foregroundStyle(.secondary)
+                                            .lineLimit(1)
+                                    }
+                                    Spacer(minLength: 0)
+                                    Text("Assign")
+                                        .font(.system(size: 10, weight: .medium))
+                                        .foregroundStyle(.secondary)
+                                }
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 7)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                        .fill(index == mentionSelection ? Color.primary.opacity(0.09) : Color.clear)
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        if userMentionResults.isEmpty {
+                            Text(auth.isLoggedIn ? "No matching people" : "Sign in to mention people")
                                 .font(.system(size: 12))
                                 .foregroundStyle(.secondary)
                                 .padding(.horizontal, 12)
@@ -934,7 +1038,7 @@ struct LauncherView: View {
                                 .padding(.vertical, 7)
                                 .background(
                                     RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                        .fill(index == mentionSelection ? Color.white.opacity(0.12) : Color.clear)
+                                        .fill(index == mentionSelection ? Color.primary.opacity(0.09) : Color.clear)
                                 )
                             }
                             .buttonStyle(.plain)
@@ -960,7 +1064,7 @@ struct LauncherView: View {
                 .fill(.ultraThinMaterial)
                 .overlay(
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
+                        .strokeBorder(FQTheme.border, lineWidth: 1)
                 )
                 .shadow(color: .black.opacity(0.35), radius: 18, y: 8)
         )
@@ -995,7 +1099,7 @@ struct LauncherView: View {
                     }
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
-                    .background(Color.white.opacity(0.06), in: Capsule())
+                    .background(Color.primary.opacity(0.06), in: Capsule())
                 }
             }
             .padding(.horizontal, 18)
@@ -1053,9 +1157,43 @@ struct LauncherView: View {
                 onOpenBoards: openBoards,
                 onStartAgent: { item in
                     startAgent(for: item.task, columnName: item.column.name)
-                }
+                },
+                onOpenTask: { task in
+                    openTaskDetail(task)
+                },
+                onNewTask: openTaskComposer
             )
         }
+    }
+
+    // MARK: - Task composer / detail (standalone floating windows)
+
+    private func openTaskComposer() {
+        guard auth.isLoggedIn, board.selectedProject != nil else {
+            errorMessage = "Sign in and pick a project first."
+            return
+        }
+        TaskModalWindows.shared.showComposer(
+            store: board,
+            initialColumnID: board.selectedColumnID,
+            initialTitle: prompt,
+            attachments: attachments.map { URL(fileURLWithPath: $0.path) }
+        ) { task in
+            rememberTask(task, columnName: board.selectedColumn?.name)
+            lastCreatedTask = task
+            prompt = ""
+            attachments = []
+        }
+    }
+
+    private func openTaskDetail(_ task: FastplayTask) {
+        TaskModalWindows.shared.showDetail(
+            task: task,
+            store: board,
+            onStartAgent: { task in
+                startAgent(for: task, columnName: task.resolvedColumnName)
+            }
+        )
     }
 
     private func openAccountOrSettings() {
@@ -1070,6 +1208,10 @@ struct LauncherView: View {
 
     private var previewedSession: AgentSession? {
         sessions.sessions.first(where: { $0.id == selectedSessionID })
+    }
+
+    private var isPreviewingChat: Bool {
+        previewedSession?.isChat == true
     }
 
     /// Chrome only — surfaces live in `persistentTerminalLayer` underneath.
@@ -1117,7 +1259,7 @@ struct LauncherView: View {
                         .font(.system(size: 10, weight: .bold))
                         .foregroundStyle(.secondary)
                         .frame(width: 22, height: 22)
-                        .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+                        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
                 }
                 .buttonStyle(.plain)
                 .help("Quit session")
@@ -1164,7 +1306,9 @@ struct LauncherView: View {
 
     private func openSessionPreview() {
         guard mode == .agent, let session = previewedSession else { return }
-        sessions.terminals.select(session.id)
+        if !session.isChat {
+            sessions.terminals.select(session.id)
+        }
         withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) {
             isSessionPreviewOpen = true
         }
@@ -1227,8 +1371,8 @@ struct LauncherView: View {
                         .font(.system(size: 13, weight: .semibold))
                         .padding(.horizontal, 14)
                         .padding(.vertical, 8)
-                        .background(Color.white.opacity(0.92), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                        .foregroundStyle(.black.opacity(0.88))
+                        .background(FQTheme.controlPrimary, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .foregroundStyle(FQTheme.onControlPrimary)
                 }
                 .buttonStyle(.plain)
 
@@ -1335,7 +1479,7 @@ struct LauncherView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
-        .background(Color.black.opacity(0.18))
+        .background(Color.primary.opacity(0.035))
     }
 
     /// Bottom-left account slot — Fastplay account when signed in.
@@ -1439,8 +1583,15 @@ struct LauncherView: View {
     }
 
     private func createBoardTask() async {
-        let title = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !title.isEmpty else { return }
+        // `@[Name](user:id)` tokens in the quick-create field become
+        // assignees; the title is the text with tokens stripped.
+        let raw = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        let assigneeIDs = Self.mentionedUserIDs(in: raw)
+        let title = Self.strippingUserMentions(from: raw)
+        guard !title.isEmpty else {
+            if !assigneeIDs.isEmpty { errorMessage = "Add a task title too." }
+            return
+        }
         guard auth.isLoggedIn else {
             errorMessage = "Sign in to create tasks."
             return
@@ -1458,6 +1609,7 @@ struct LauncherView: View {
             let task = try await board.createTaskFromLauncher(
                 title: title,
                 columnID: board.selectedColumnID,
+                assigneeIDs: assigneeIDs,
                 attachmentURLs: files
             )
             rememberTask(task, columnName: board.selectedColumn?.name)
@@ -1467,6 +1619,25 @@ struct LauncherView: View {
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    static func mentionedUserIDs(in text: String) -> [String] {
+        let pattern = try! NSRegularExpression(pattern: "@\\[[^\\]]*\\]\\(user:([^)\\s]+)\\)")
+        let ns = text as NSString
+        var ids: [String] = []
+        for match in pattern.matches(in: text, range: NSRange(location: 0, length: ns.length)) where match.numberOfRanges > 1 {
+            let id = ns.substring(with: match.range(at: 1))
+            if !ids.contains(id) { ids.append(id) }
+        }
+        return ids
+    }
+
+    static func strippingUserMentions(from text: String) -> String {
+        let pattern = try! NSRegularExpression(pattern: "@\\[[^\\]]*\\]\\(user:[^)\\s]+\\)")
+        let ns = text as NSString
+        return pattern.stringByReplacingMatches(in: text, range: NSRange(location: 0, length: ns.length), withTemplate: "")
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func lastCreatedTaskBanner(_ task: FastplayTask) -> some View {
@@ -1500,7 +1671,7 @@ struct LauncherView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
-        .background(Color.white.opacity(0.05))
+        .background(Color.primary.opacity(0.05))
     }
 
     private func sendChatMessage() {
@@ -1768,6 +1939,11 @@ struct LauncherView: View {
     }
 
     private func addAttachments(_ urls: [URL]) {
+        // Chat preview open → dropped/picked files belong to its composer.
+        if let chatAttach = LauncherKeyRouter.shared.chatComposerAttach {
+            chatAttach(urls)
+            return
+        }
         for url in urls {
             if !attachments.contains(where: { $0.path == url.path }) {
                 attachments.append(PromptAttachment(url: url))
@@ -1843,18 +2019,21 @@ struct LauncherView: View {
                     return nil
                 case "v":
                     let pb = NSPasteboard.general
+                    // Chat preview open → its composer takes pasted files.
+                    let attachTarget = LauncherKeyRouter.shared.chatComposerAttach
+                        ?? LauncherKeyRouter.shared.attachFiles
                     if let urls = pb.readObjects(forClasses: [NSURL.self], options: [
                         .urlReadingFileURLsOnly: true
                     ]) as? [URL], !urls.isEmpty {
                         DispatchQueue.main.async {
-                            LauncherKeyRouter.shared.attachFiles?(urls)
+                            attachTarget?(urls)
                         }
                         return nil
                     }
                     // Raw image data (screenshots, copied images) → temp PNG.
                     if let imageURL = Self.pastedImageURL(from: pb) {
                         DispatchQueue.main.async {
-                            LauncherKeyRouter.shared.attachFiles?([imageURL])
+                            attachTarget?([imageURL])
                         }
                         return nil
                     }
@@ -1868,6 +2047,12 @@ struct LauncherView: View {
             // (so agents can take typed replies). Esc still closes via the panel.
             if LauncherKeyRouter.shared.isSessionPreviewOpen,
                event.window?.firstResponder is FastqSurfaceView {
+                return event
+            }
+
+            // The chat preview's composer owns the keyboard entirely — don't
+            // reroute typing to the (hidden) main prompt.
+            if LauncherKeyRouter.shared.isSessionPreviewOpen, isPreviewingChat {
                 return event
             }
 
@@ -2139,6 +2324,15 @@ struct LauncherView: View {
     }
 
     private func handleMentionQuery(_ mention: ActiveMention?) {
+        var mention = mention
+        // Chat mode has no mentions; Projects mode repurposes `@` for people
+        // (assignees on the new task) and doesn't use `#`.
+        if mode == .chat {
+            mention = nil
+        } else if mode == .board, case .task = mention {
+            mention = nil
+        }
+
         activeMention = mention
         guard let mention else {
             mentionVisible = false
@@ -2146,6 +2340,7 @@ struct LauncherView: View {
             fileMentions.clearResults()
             mentionResults = []
             taskMentionResults = []
+            userMentionResults = []
             isSearchingTasks = false
             return
         }
@@ -2155,15 +2350,48 @@ struct LauncherView: View {
         case .file(let query):
             taskMentionResults = []
             isSearchingTasks = false
-            refreshMentionIndex()
-            fileMentions.query(query.filter, primaryPath: linkedProjectPath, limit: 40)
-            if mentionResults.isEmpty {
-                mentionSelection = 0
+            if mode == .board {
+                fileMentions.clearResults()
+                mentionResults = []
+                scheduleUserMentionSearch(filter: query.filter)
+            } else {
+                userMentionResults = []
+                refreshMentionIndex()
+                fileMentions.query(query.filter, primaryPath: linkedProjectPath, limit: 40)
+                if mentionResults.isEmpty {
+                    mentionSelection = 0
+                }
             }
         case .task(let query):
             fileMentions.clearResults()
             mentionResults = []
+            userMentionResults = []
             scheduleTaskMentionSearch(filter: query.filter)
+        }
+    }
+
+    private func scheduleUserMentionSearch(filter: String) {
+        userSearchGeneration += 1
+        let generation = userSearchGeneration
+        mentionSelection = 0
+        guard auth.isLoggedIn else {
+            userMentionResults = []
+            return
+        }
+        Task {
+            if !filter.isEmpty {
+                try? await Swift.Task.sleep(nanoseconds: 160_000_000)
+                guard generation == userSearchGeneration else { return }
+            }
+            let users = (try? await FastplayAPIClient.shared.searchUsers(
+                query: filter.isEmpty ? nil : filter,
+                workspaceID: board.selectedWorkspaceID
+            )) ?? []
+            guard generation == userSearchGeneration else { return }
+            userMentionResults = users
+            if mentionSelection >= users.count {
+                mentionSelection = max(0, users.count - 1)
+            }
         }
     }
 
@@ -2282,7 +2510,16 @@ struct LauncherView: View {
         }
 
         let insertion: String
+        var confirmedTaskOnly = false
         switch mention {
+        case .file where mode == .board:
+            // Projects mode: `@` assigns a person to the task being created.
+            guard userMentionResults.indices.contains(mentionSelection) else {
+                mentionVisible = false
+                LauncherKeyRouter.shared.isMentionPopupOpen = false
+                return
+            }
+            insertion = MentionMarkup.user(userMentionResults[mentionSelection])
         case .file:
             let list = fileMentions.results.isEmpty ? mentionResults : fileMentions.results
             guard list.indices.contains(mentionSelection) else {
@@ -2305,6 +2542,7 @@ struct LauncherView: View {
             let item = taskMentionResults[mentionSelection]
             rememberTask(item.task, columnName: item.columnName)
             insertion = "#task:\(item.task.id)"
+            confirmedTaskOnly = true
         }
 
         let replaced = ns.replacingCharacters(in: mention.range, with: insertion + " ")
@@ -2314,9 +2552,20 @@ struct LauncherView: View {
         activeMention = nil
         mentionResults = []
         taskMentionResults = []
+        userMentionResults = []
         isSearchingTasks = false
         fileMentions.clearResults()
         focusPromptSoon(caret: mention.range.location + (insertion + " ").utf16.count)
+
+        // Agent mode: picking a task with nothing else typed IS the request —
+        // launch immediately instead of demanding more text + another Return.
+        if confirmedTaskOnly, mode == .agent {
+            let rest = AgentLauncher.stripTaskMentionTokens(from: prompt)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if rest.isEmpty {
+                Task { await launchAgent() }
+            }
+        }
     }
 }
 
@@ -2333,7 +2582,7 @@ private struct SessionRow: View {
         HStack(spacing: 12) {
             ZStack {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Color.white.opacity(0.08))
+                    .fill(Color.primary.opacity(0.07))
                     .frame(width: 34, height: 34)
                 AgentBrandIcon(kind: session.tool, size: 16)
             }
@@ -2359,7 +2608,7 @@ private struct SessionRow: View {
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.secondary)
                     .frame(width: 24, height: 24)
-                    .background(Color.white.opacity(0.06), in: Circle())
+                    .background(Color.primary.opacity(0.06), in: Circle())
             }
             .buttonStyle(.plain)
             .help("Quit this agent window")
@@ -2368,7 +2617,7 @@ private struct SessionRow: View {
         .padding(.vertical, 10)
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(isSelected ? Color.white.opacity(0.10) : Color.clear)
+                .fill(isSelected ? Color.primary.opacity(0.08) : Color.clear)
         )
         .contentShape(Rectangle())
         .onTapGesture(count: 2, perform: onFocus)
@@ -2410,10 +2659,10 @@ private struct ChipLabel: View {
         .padding(.horizontal, 8)
         .padding(.vertical, 4.5)
         // Quiet by default — a pill background only while its menu is open.
-        .background(Color.white.opacity(isActive ? 0.13 : 0), in: Capsule())
+        .background(Color.primary.opacity(isActive ? 0.10 : 0), in: Capsule())
         .overlay(
             Capsule()
-                .strokeBorder(Color.white.opacity(isActive ? 0.2 : 0), lineWidth: 1)
+                .strokeBorder(Color.primary.opacity(isActive ? 0.16 : 0), lineWidth: 1)
         )
         .fixedSize()
         .animation(.easeOut(duration: 0.15), value: isActive)
@@ -2456,7 +2705,7 @@ private struct KeyCap: View {
             .font(.system(size: 11, weight: .semibold))
             .padding(.horizontal, 6)
             .padding(.vertical, 3)
-            .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+            .background(Color.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
             .foregroundStyle(.secondary)
     }
 }
@@ -2476,7 +2725,7 @@ private struct FooterAction: View {
                     .font(.system(size: 11, weight: .semibold, design: .rounded))
                     .padding(.horizontal, 5)
                     .padding(.vertical, 2)
-                    .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+                    .background(Color.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
                     .foregroundStyle(.secondary)
             }
         }
@@ -2484,20 +2733,20 @@ private struct FooterAction: View {
     }
 }
 
+/// Neutral adaptive glass: frosted material with a faint scrim so content
+/// keeps contrast on any wallpaper, in both light and dark appearance.
 private struct LauncherBackground: View {
+    @Environment(\.colorScheme) private var colorScheme
+
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .fill(.ultraThinMaterial)
-            LinearGradient(
-                colors: [
-                    Color(red: 0.55, green: 0.12, blue: 0.18).opacity(0.35),
-                    Color.clear
-                ],
-                startPoint: .topTrailing,
-                endPoint: UnitPoint(x: 0.55, y: 0.45)
-            )
-            Color.black.opacity(0.22)
+            if colorScheme == .dark {
+                Color.black.opacity(0.28)
+            } else {
+                Color.white.opacity(0.45)
+            }
         }
     }
 }
